@@ -1,0 +1,10 @@
+[package]
+name = "trezor-api"
+version = "0.0.0"
+authors = ["Steven Roose <steven@stevenroose.org>"]
+
+[dependencies]
+bitcoin = "0.14"
+hid = "0.3"
+secp256k1 = "0.6"
+protobuf = "2.0"
