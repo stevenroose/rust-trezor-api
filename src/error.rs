@@ -4,6 +4,7 @@ use std::result;
 
 use bitcoin::util::base58;
 use hid;
+use protobuf::error::ProtobufError;
 use secp256k1;
 use std::{error, fmt, io, string};
 
@@ -18,6 +19,20 @@ pub enum Error {
 	DeviceNotUnique,
 	/// The HID version supported by the device was unknown.
 	UnknownHidVersion,
+	/// The device produced a data chunk of unexpected size.
+	UnexpectedChunkSizeFromDevice(usize),
+	/// Timeout expired while reading from device.
+	DeviceReadTimeout,
+	/// The device sent a chunk with a wrong magic value.
+	DeviceBadMagic,
+	/// The device sent a message with a wrong session id.
+	DeviceBadSessionId,
+	/// The device sent an unexpected response message.
+	DeviceUnexpectedMessageType,
+	/// The device sent an unexpected sequence number.
+	DeviceUnexpectedSequenceNumber,
+	/// Error reading or writing protobuf messages.
+	Protobuf(ProtobufError),
 
 	// unused:
 	/// Error in Base58 decoding
@@ -64,15 +79,23 @@ pub enum Error {
 	UnexpectedEof,
 }
 
-impl From<base58::Error> for Error {
-	fn from(e: base58::Error) -> Error {
-		Error::Base58(e)
-	}
-}
-
 impl From<hid::Error> for Error {
 	fn from(e: hid::Error) -> Error {
 		Error::Hid(e)
+	}
+}
+
+impl From<ProtobufError> for Error {
+	fn from(e: ProtobufError) -> Error {
+		Error::Protobuf(e)
+	}
+}
+
+// unused:
+
+impl From<base58::Error> for Error {
+	fn from(e: base58::Error) -> Error {
+		Error::Base58(e)
 	}
 }
 
@@ -113,6 +136,17 @@ impl error::Error for Error {
 			Error::NoDeviceFound => "Trezor device not found",
 			Error::DeviceNotUnique => "multiple Trezor devices found",
 			Error::UnknownHidVersion => "HID version of the device unknown",
+			Error::UnexpectedChunkSizeFromDevice(_) => {
+				"the device produced a data chunk of unexpected size"
+			}
+			Error::DeviceReadTimeout => "timeout expired while reading from device",
+			Error::DeviceBadMagic => "the device sent chunk with wrong magic value",
+			Error::DeviceBadSessionId => "the device sent a message with a wrong session id",
+			Error::DeviceUnexpectedMessageType => "the device sent an unexpected response message",
+			Error::DeviceUnexpectedSequenceNumber => {
+				"the device sent an unexpected sequence number"
+			}
+			Error::Protobuf(_) => "error reading or writing protobuf messages",
 			//
 			// unused:
 			Error::Base58(ref e) => error::Error::description(e),
@@ -143,8 +177,15 @@ impl error::Error for Error {
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
-			Error::Base58(ref e) => fmt::Display::fmt(e, f),
 			Error::Hid(ref e) => fmt::Display::fmt(e, f),
+			Error::UnexpectedChunkSizeFromDevice(s) => {
+				write!(f, "device produced chunk of size {}", s)
+			}
+			Error::Protobuf(ref e) => write!(f, "protobuf: {}", e),
+			_ => f.write_str(error::Error::description(self)),
+			//
+			// unused:
+			Error::Base58(ref e) => fmt::Display::fmt(e, f),
 			Error::Io(ref e) => fmt::Display::fmt(e, f),
 			Error::Secp(ref e) => fmt::Display::fmt(e, f),
 			Error::Utf8(ref e) => fmt::Display::fmt(e, f),
@@ -164,7 +205,6 @@ impl fmt::Display for Error {
 				write!(f, "user ID length {} exceeds max {}", used, max)
 			}
 			Error::EntryOutOfRange(entry) => write!(f, "entry {} not in wallet", entry),
-			_ => f.write_str(error::Error::description(self)),
 		}
 	}
 }

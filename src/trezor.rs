@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Duration;
 
 use hid;
 
@@ -8,12 +9,14 @@ use error::{Error, Result};
 use protobuf;
 use protocol::{Protocol, ProtocolV1, ProtocolV2, Transport};
 
+const CHUNK_SIZE: usize = 64;
+
 pub struct Trezor {
 	pub model: Model,
 	pub debug: bool,
 
 	_hid_manager: hid::Manager,
-	hid_version: usize,
+	hid_version: HidVersion,
 	handle: Option<hid::Handle>,
 }
 
@@ -26,7 +29,7 @@ impl Drop for Trezor {
 
 impl fmt::Debug for Trezor {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "{} (debug: {}, hid version: {})", self.model, self.debug, self.hid_version)
+		write!(f, "{} (debug: {}, hid version: {:?})", self.model, self.debug, self.hid_version)
 	}
 }
 
@@ -36,13 +39,34 @@ impl fmt::Display for Trezor {
 	}
 }
 
+#[derive(Debug)]
+enum HidVersion {
+	V1,
+	V2,
+}
+
 impl Transport for Trezor {
 	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<()> {
-		assert_eq!(64, chunk.len());
+		assert_eq!(CHUNK_SIZE, chunk.len());
+		let payload = match self.hid_version {
+			HidVersion::V1 => chunk,
+			HidVersion::V2 => {
+				let mut payload = vec![0];
+				payload.extend(chunk);
+				payload
+			}
+		};
+		self.handle.as_mut().unwrap().data().write(payload)?;
 		Ok(())
 	}
+
 	fn read_chunk(&mut self) -> Result<Vec<u8>> {
-		Ok(vec![])
+		let mut chunk = Vec::with_capacity(64);
+		match self.handle.as_mut().unwrap().data().read(&mut chunk, Duration::from_millis(10))? {
+			Some(64) => Ok(chunk),
+			None => Err(Error::DeviceReadTimeout),
+			Some(chunk_size) => Err(Error::UnexpectedChunkSizeFromDevice(chunk_size)),
+		}
 	}
 }
 
@@ -52,7 +76,7 @@ impl Trezor {
 		S: protobuf::Message,
 		R: protobuf::Message,
 	{
-		Err(Error::UnknownHidVersion)
+		unimplemented!();
 	}
 }
 
@@ -71,17 +95,17 @@ impl fmt::Display for AvailableDevice {
 }
 
 /// Probe the HID version for a Trezor 1 device.
-fn probe_hid_version(handle: &mut hid::Handle) -> Result<usize> {
+fn probe_hid_version(handle: &mut hid::Handle) -> Result<HidVersion> {
 	let mut w = vec![0xff; 65];
 	w[0] = 0;
 	w[1] = 63;
 	if handle.data().write(w)? == 65 {
-		return Ok(2);
+		return Ok(HidVersion::V2);
 	}
 	let mut w = vec![0xff; 64];
 	w[0] = 63;
 	if handle.data().write(w)? == 64 {
-		return Ok(1);
+		return Ok(HidVersion::V1);
 	}
 	Err(Error::UnknownHidVersion)
 }

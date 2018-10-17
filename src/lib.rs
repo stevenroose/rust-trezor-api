@@ -1,4 +1,5 @@
 extern crate bitcoin;
+extern crate byteorder;
 extern crate hid;
 extern crate protobuf;
 extern crate secp256k1;
