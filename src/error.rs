@@ -5,6 +5,7 @@ use std::result;
 use bitcoin::util::base58;
 use hid;
 use protobuf::error::ProtobufError;
+use protos;
 use secp256k1;
 use std::{error, fmt, io, string};
 
@@ -27,12 +28,14 @@ pub enum Error {
 	DeviceBadMagic,
 	/// The device sent a message with a wrong session id.
 	DeviceBadSessionId,
-	/// The device sent an unexpected response message.
-	DeviceUnexpectedMessageType,
 	/// The device sent an unexpected sequence number.
 	DeviceUnexpectedSequenceNumber,
+	/// The device sent an unexpected response message.
+	DeviceUnexpectedMessageType(u32),
 	/// Error reading or writing protobuf messages.
 	Protobuf(ProtobufError),
+	/// A failure message was returned by the device.
+	FailureResponse(protos::Failure),
 
 	// unused:
 	/// Error in Base58 decoding
@@ -142,11 +145,14 @@ impl error::Error for Error {
 			Error::DeviceReadTimeout => "timeout expired while reading from device",
 			Error::DeviceBadMagic => "the device sent chunk with wrong magic value",
 			Error::DeviceBadSessionId => "the device sent a message with a wrong session id",
-			Error::DeviceUnexpectedMessageType => "the device sent an unexpected response message",
 			Error::DeviceUnexpectedSequenceNumber => {
 				"the device sent an unexpected sequence number"
 			}
+			Error::DeviceUnexpectedMessageType(_) => {
+				"the device sent an unexpected response message"
+			}
 			Error::Protobuf(_) => "error reading or writing protobuf messages",
+			Error::FailureResponse(_) => "a failure message was returned by the device",
 			//
 			// unused:
 			Error::Base58(ref e) => error::Error::description(e),
@@ -182,6 +188,13 @@ impl fmt::Display for Error {
 				write!(f, "device produced chunk of size {}", s)
 			}
 			Error::Protobuf(ref e) => write!(f, "protobuf: {}", e),
+			Error::FailureResponse(ref e) => write!(
+				f,
+				r#"failure received: code={:?} message="{}""#,
+				e.get_code(),
+				e.get_message()
+			),
+			Error::DeviceUnexpectedMessageType(t) => write!(f, "unexpected message type: {}", t),
 			_ => f.write_str(error::Error::description(self)),
 			//
 			// unused:

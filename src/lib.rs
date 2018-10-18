@@ -6,14 +6,15 @@ extern crate secp256k1;
 
 use std::fmt;
 
+mod client;
 mod constants;
 mod error;
 mod protocol;
 mod protos;
-mod trezor;
+mod transport;
 
-pub use error::*;
-pub use trezor::*;
+pub use client::{Trezor, TrezorClient};
+pub use error::{Error, Result};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Model {
@@ -29,5 +30,45 @@ impl fmt::Display for Model {
 			Model::Trezor2 => "Trezor 2",
 			Model::Trezor2Bl => "Trezor 2 Bl",
 		})
+	}
+}
+
+#[derive(Debug)]
+pub struct AvailableDevice {
+	pub model: Model,
+	pub debug: bool,
+	transport: transport::AvailableDeviceTransport,
+}
+
+impl fmt::Display for AvailableDevice {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{} (transport: {}) (debug: {})", self.model, &self.transport, self.debug)
+	}
+}
+
+impl AvailableDevice {
+	pub fn connect(self) -> Result<Trezor> {
+		let transport = transport::connect(&self)?;
+		Ok(Trezor::new(self.model, transport))
+	}
+}
+
+/// Search for all available devices.
+pub fn find_devices() -> Result<Vec<AvailableDevice>> {
+	transport::hid::HidTransport::find_devices()
+}
+
+/// Try to get a single device.  Optionally specify whether debug should be enabled or not.
+/// Can error if there are multiple or no devices available.
+/// For more fine-grained device selection, use `find_devices()`.
+pub fn unique(debug: Option<bool>) -> Result<Trezor> {
+	let mut devices = find_devices()?;
+	if let Some(debug) = debug {
+		devices.retain(|d| d.debug == debug);
+	}
+	match devices.len() {
+		0 => Err(Error::NoDeviceFound),
+		1 => Ok(devices.remove(0).connect()?),
+		_ => Err(Error::DeviceNotUnique),
 	}
 }
