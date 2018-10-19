@@ -4,17 +4,16 @@ extern crate hid;
 extern crate protobuf;
 extern crate secp256k1;
 
-use std::fmt;
-
 mod client;
 mod constants;
 mod error;
-mod protocol;
 mod protos;
 mod transport;
 
-pub use client::{Trezor, TrezorClient};
+pub use client::{InteractionRequest, Trezor, TrezorClient, TrezorResponse};
 pub use error::{Error, Result};
+
+use std::fmt;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Model {

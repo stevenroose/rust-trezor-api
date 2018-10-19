@@ -1,13 +1,14 @@
 //! # Error Handling
 
 use std::result;
+use std::{error, fmt, io, string};
 
 use bitcoin::util::base58;
+use client::InteractionRequest;
 use hid;
 use protobuf::error::ProtobufError;
 use protos;
 use secp256k1;
-use std::{error, fmt, io, string};
 
 /// Trezor error.
 #[derive(Debug)]
@@ -30,12 +31,16 @@ pub enum Error {
 	DeviceBadSessionId,
 	/// The device sent an unexpected sequence number.
 	DeviceUnexpectedSequenceNumber,
-	/// The device sent an unexpected response message.
-	DeviceUnexpectedMessageType(u32),
+	/// Received a non-existing message type from the device.
+	InvalidMessageType(u32),
+	/// Received an unexpected message type from the device.
+	UnexpectedMessageType(protos::MessageType),
 	/// Error reading or writing protobuf messages.
 	Protobuf(ProtobufError),
 	/// A failure message was returned by the device.
 	FailureResponse(protos::Failure),
+	/// An unexpected interaction request was returned by the device.
+	UnexpectedInteractionRequest(InteractionRequest),
 
 	// unused:
 	/// Error in Base58 decoding
@@ -148,11 +153,15 @@ impl error::Error for Error {
 			Error::DeviceUnexpectedSequenceNumber => {
 				"the device sent an unexpected sequence number"
 			}
-			Error::DeviceUnexpectedMessageType(_) => {
-				"the device sent an unexpected response message"
+			Error::InvalidMessageType(_) => "received a non-existing message type from the device",
+			Error::UnexpectedMessageType(_) => {
+				"received an unexpected message type from the device"
 			}
 			Error::Protobuf(_) => "error reading or writing protobuf messages",
 			Error::FailureResponse(_) => "a failure message was returned by the device",
+			Error::UnexpectedInteractionRequest(_) => {
+				"an unexpected interaction request was returned by the device"
+			}
 			//
 			// unused:
 			Error::Base58(ref e) => error::Error::description(e),
@@ -187,6 +196,10 @@ impl fmt::Display for Error {
 			Error::UnexpectedChunkSizeFromDevice(s) => {
 				write!(f, "device produced chunk of size {}", s)
 			}
+			Error::InvalidMessageType(ref t) => write!(f, "received invalid message type: {}", t),
+			Error::UnexpectedMessageType(ref t) => {
+				write!(f, "received unexpected message type: {:?}", t)
+			}
 			Error::Protobuf(ref e) => write!(f, "protobuf: {}", e),
 			Error::FailureResponse(ref e) => write!(
 				f,
@@ -194,7 +207,9 @@ impl fmt::Display for Error {
 				e.get_code(),
 				e.get_message()
 			),
-			Error::DeviceUnexpectedMessageType(t) => write!(f, "unexpected message type: {}", t),
+			Error::UnexpectedInteractionRequest(ref r) => {
+				write!(f, "unexpected interaction request: {}", r)
+			}
 			_ => f.write_str(error::Error::description(self)),
 			//
 			// unused:

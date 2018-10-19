@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use hid;
 
-use super::super::Model;
-use super::*;
+use super::super::{AvailableDevice, Model};
 use constants;
 use error::{Error, Result};
-use protocol::{Link, Protocol, ProtocolV1};
+use transport::protocol::{Link, Protocol, ProtocolV1};
+use transport::{AvailableDeviceTransport, ProtoMessage, Transport};
 
 const CHUNK_SIZE: usize = 64;
 
@@ -187,10 +187,10 @@ impl super::Transport for HidTransport {
 		self.protocol.session_end()
 	}
 
-	fn write_message(&mut self, mtype: MessageType, message: Vec<u8>) -> Result<()> {
-		self.protocol.write(mtype, message)
+	fn write_message(&mut self, message: ProtoMessage) -> Result<()> {
+		self.protocol.write(message)
 	}
-	fn read_message(&mut self, mtype: MessageType) -> Result<Vec<u8>> {
-		self.protocol.read(mtype)
+	fn read_message(&mut self) -> Result<ProtoMessage> {
+		self.protocol.read()
 	}
 }
