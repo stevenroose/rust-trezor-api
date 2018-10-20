@@ -11,7 +11,9 @@ mod messages;
 pub mod protos;
 mod transport;
 
-pub use client::{InteractionRequest, Trezor, TrezorClient, TrezorResponse};
+pub use client::{
+	ButtonRequest, InteractionType, PassphraseRequest, PinMatrixRequest, Trezor, TrezorResponse,
+};
 pub use error::{Error, Result};
 
 use std::fmt;

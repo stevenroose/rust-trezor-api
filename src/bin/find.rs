@@ -1,7 +1,5 @@
 extern crate trezor_api;
 
-use trezor_api::TrezorClient;
-
 fn main() {
 	let trezors = trezor_api::find_devices().unwrap();
 	println!("Found {} devices: ", trezors.len());
