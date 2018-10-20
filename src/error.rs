@@ -4,7 +4,7 @@ use std::result;
 use std::{error, fmt, io, string};
 
 use bitcoin::util::base58;
-use client::InteractionRequest;
+use client::InteractionType;
 use hid;
 use protobuf::error::ProtobufError;
 use protos;
@@ -40,7 +40,7 @@ pub enum Error {
 	/// A failure message was returned by the device.
 	FailureResponse(protos::Failure),
 	/// An unexpected interaction request was returned by the device.
-	UnexpectedInteractionRequest(InteractionRequest),
+	UnexpectedInteractionRequest(InteractionType),
 
 	// unused:
 	/// Error in Base58 decoding
@@ -208,7 +208,7 @@ impl fmt::Display for Error {
 				e.get_message()
 			),
 			Error::UnexpectedInteractionRequest(ref r) => {
-				write!(f, "unexpected interaction request: {}", r)
+				write!(f, "unexpected interaction request: {:?}", r)
 			}
 			_ => f.write_str(error::Error::description(self)),
 			//

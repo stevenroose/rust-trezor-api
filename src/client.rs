@@ -12,46 +12,144 @@ pub trait TrezorMessage: protobuf::Message {
 	fn message_type() -> MessageType;
 }
 
-#[derive(Clone, Debug)]
-pub enum InteractionRequest {
-	ButtonRequest(protos::ButtonRequest),
-	PinRequest(protos::PinMatrixRequest),
-	PassphraseRequest(protos::PassphraseRequest),
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum InteractionType {
+	Button,
+	PinMatrix,
+	Passphrase,
 }
 
-impl fmt::Display for InteractionRequest {
+pub struct ButtonRequest<T: TrezorMessage> {
+	pub message: protos::ButtonRequest,
+	next: Box<Fn() -> Result<TrezorResponse<T>>>,
+}
+
+impl<T: TrezorMessage> fmt::Debug for ButtonRequest<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			InteractionRequest::ButtonRequest(ref m) => write!(f, "ButtonRequest: {:?}", m),
-			InteractionRequest::PinRequest(ref m) => write!(f, "PinRequest: {:?}", m),
-			InteractionRequest::PassphraseRequest(ref m) => write!(f, "PassphraseRequest: {:?}", m),
-		}
+		fmt::Debug::fmt(&self.message, f)
 	}
 }
 
-#[derive(Clone, Debug)]
-pub enum TrezorResponse<T: protobuf::Message> {
-	Ok(T),
-	Failure(protos::Failure),
-	Request(InteractionRequest),
+impl<T: TrezorMessage> ButtonRequest<T> {
+	pub fn ack(self) -> Result<TrezorResponse<T>> {
+		let n = self.next;
+		n()
+	}
 }
 
-impl<T: protobuf::Message> fmt::Display for TrezorResponse<T> {
+pub struct PinMatrixRequest<T: TrezorMessage> {
+	pub message: protos::PinMatrixRequest,
+	next: Box<Fn(String) -> Result<TrezorResponse<T>>>,
+}
+
+impl<T: TrezorMessage> fmt::Debug for PinMatrixRequest<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		fmt::Debug::fmt(&self.message, f)
+	}
+}
+
+impl<T: TrezorMessage> PinMatrixRequest<T> {
+	pub fn ack(self, pin: String) -> Result<TrezorResponse<T>> {
+		let n = self.next;
+		n(pin)
+	}
+}
+
+pub struct PassphraseRequest<T: TrezorMessage> {
+	pub message: protos::PassphraseRequest,
+	next: Box<Fn(String) -> Result<TrezorResponse<T>>>,
+}
+
+impl<T: TrezorMessage> fmt::Debug for PassphraseRequest<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		fmt::Debug::fmt(&self.message, f)
+	}
+}
+
+impl<T: TrezorMessage> PassphraseRequest<T> {
+	pub fn ack(self, passphrase: String) -> Result<TrezorResponse<T>> {
+		let n = self.next;
+		n(passphrase)
+	}
+}
+
+#[derive(Debug)]
+pub enum TrezorResponse<T: TrezorMessage> {
+	Ok(T),
+	Failure(protos::Failure),
+	ButtonRequest(ButtonRequest<T>),
+	PinMatrixRequest(PinMatrixRequest<T>),
+	PassphraseRequest(PassphraseRequest<T>),
+}
+
+impl<T: TrezorMessage> fmt::Display for TrezorResponse<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			TrezorResponse::Ok(ref m) => write!(f, "Ok: {:?}", m),
 			TrezorResponse::Failure(ref m) => write!(f, "Failure: {:?}", m),
-			TrezorResponse::Request(ref m) => write!(f, "Request: {}", m),
+			TrezorResponse::ButtonRequest(ref r) => write!(f, "ButtonRequest: {:?}", r),
+			TrezorResponse::PinMatrixRequest(ref r) => write!(f, "PinMatrixRequest: {:?}", r),
+			TrezorResponse::PassphraseRequest(ref r) => write!(f, "PassphraseRequest: {:?}", r),
 		}
 	}
 }
 
-impl<T: protobuf::Message> TrezorResponse<T> {
+impl<T: TrezorMessage> TrezorResponse<T> {
 	pub fn ok(self) -> Result<T> {
 		match self {
 			TrezorResponse::Ok(m) => Ok(m),
 			TrezorResponse::Failure(m) => Err(Error::FailureResponse(m)),
-			TrezorResponse::Request(r) => Err(Error::UnexpectedInteractionRequest(r)),
+			TrezorResponse::ButtonRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Button))
+			}
+			TrezorResponse::PinMatrixRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::PinMatrix))
+			}
+			TrezorResponse::PassphraseRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Passphrase))
+			}
+		}
+	}
+
+	pub fn button_request(self) -> Result<ButtonRequest<T>> {
+		match self {
+			TrezorResponse::ButtonRequest(r) => Ok(r),
+			TrezorResponse::Ok(m) => Err(Error::UnexpectedMessageType(T::message_type())),
+			TrezorResponse::Failure(m) => Err(Error::FailureResponse(m)),
+			TrezorResponse::PinMatrixRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::PinMatrix))
+			}
+			TrezorResponse::PassphraseRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Passphrase))
+			}
+		}
+	}
+
+	pub fn pin_request(self) -> Result<PinMatrixRequest<T>> {
+		match self {
+			TrezorResponse::PinMatrixRequest(r) => Ok(r),
+			TrezorResponse::Ok(m) => Err(Error::UnexpectedMessageType(T::message_type())),
+			TrezorResponse::Failure(m) => Err(Error::FailureResponse(m)),
+			TrezorResponse::ButtonRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Button))
+			}
+			TrezorResponse::PassphraseRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Passphrase))
+			}
+		}
+	}
+
+	pub fn passphrase_request(self) -> Result<PassphraseRequest<T>> {
+		match self {
+			TrezorResponse::PassphraseRequest(r) => Ok(r),
+			TrezorResponse::Ok(m) => Err(Error::UnexpectedMessageType(T::message_type())),
+			TrezorResponse::Failure(m) => Err(Error::FailureResponse(m)),
+			TrezorResponse::ButtonRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::Button))
+			}
+			TrezorResponse::PinMatrixRequest(r) => {
+				Err(Error::UnexpectedInteractionRequest(InteractionType::PinMatrix))
+			}
 		}
 	}
 }
@@ -82,9 +180,6 @@ impl TrezorClient for Trezor {
 	{
 		self.transport.write_message(ProtoMessage(S::message_type(), message.write_to_bytes()?))?;
 		let resp = self.transport.read_message()?;
-		// Somehow I can't include mt_recv in the same match block.
-		// But we need to do the success case separately anyway because sometimes the desired
-		// message could be an interaction request, but then we need to return Ok.
 		if resp.message_type() == R::message_type() {
 			Ok(TrezorResponse::Ok(resp.take_message()?))
 		} else {
