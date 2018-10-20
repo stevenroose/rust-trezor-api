@@ -4,12 +4,13 @@ use protobuf;
 
 use super::Model;
 use error::{Error, Result};
-use protos::MessageType::{
-	MessageType_ButtonRequest, MessageType_Failure, MessageType_PassphraseRequest,
-	MessageType_PinMatrixRequest,
-};
+use protos::MessageType::*;
 use protos::{self, MessageType};
 use transport::{ProtoMessage, Transport};
+
+pub trait TrezorMessage: protobuf::Message {
+	fn message_type() -> MessageType;
+}
 
 #[derive(Clone, Debug)]
 pub enum InteractionRequest {
@@ -74,20 +75,17 @@ impl Trezor {
 
 impl TrezorClient for Trezor {
 	#[inline]
-	fn call<S, R>(
-		&mut self,
-		mt_send: MessageType,
-		mt_recv: MessageType,
-		message: S,
-	) -> Result<TrezorResponse<R>>
+	fn call<S, R>(&mut self, message: S) -> Result<TrezorResponse<R>>
 	where
-		S: protobuf::Message,
-		R: protobuf::Message,
+		S: TrezorMessage,
+		R: TrezorMessage,
 	{
-		self.transport.write_message(ProtoMessage(mt_send, message.write_to_bytes()?))?;
+		self.transport.write_message(ProtoMessage(S::message_type(), message.write_to_bytes()?))?;
 		let resp = self.transport.read_message()?;
 		// Somehow I can't include mt_recv in the same match block.
-		if resp.message_type() == mt_recv {
+		// But we need to do the success case separately anyway because sometimes the desired
+		// message could be an interaction request, but then we need to return Ok.
+		if resp.message_type() == R::message_type() {
 			Ok(TrezorResponse::Ok(resp.take_message()?))
 		} else {
 			match resp.message_type() {
@@ -113,15 +111,10 @@ impl TrezorClient for Trezor {
 }
 
 pub trait TrezorClient {
-	fn call<S, R>(
-		&mut self,
-		mt_send: MessageType,
-		mt_recv: MessageType,
-		message: S,
-	) -> Result<TrezorResponse<R>>
+	fn call<S, R>(&mut self, message: S) -> Result<TrezorResponse<R>>
 	where
-		S: protobuf::Message,
-		R: protobuf::Message;
+		S: TrezorMessage,
+		R: TrezorMessage;
 
 	fn init_device(&mut self) -> Result<()>;
 
@@ -130,30 +123,42 @@ pub trait TrezorClient {
 	fn initialize(&mut self) -> Result<protos::Features> {
 		let mut req = protos::Initialize::new();
 		req.set_state(Vec::new());
-		self.call(MessageType::MessageType_Initialize, MessageType::MessageType_Features, req)?.ok()
+		self.call(req)?.ok()
 	}
 
 	fn ping(&mut self, message: &str) -> Result<()> {
 		let mut req = protos::Ping::new();
 		req.set_message(message.to_owned());
-		let _: protos::Success = self
-			.call(MessageType::MessageType_Ping, MessageType::MessageType_Success, req)?
-			.ok()?;
+		let _: protos::Success = self.call(req)?.ok()?;
 		Ok(())
 	}
 
 	fn change_pin(&mut self, remove: bool) -> Result<protos::ButtonRequest> {
 		let mut req = protos::ChangePin::new();
 		req.set_remove(remove);
-		self.call(MessageType::MessageType_ChangePin, MessageType::MessageType_Success, req)?.ok()
+		self.call(req)?.ok()
 	}
 
 	fn wipe_device(&mut self) -> Result<()> {
 		let req = protos::WipeDevice::new();
-		let _: protos::Success = self
-			.call(MessageType::MessageType_WipeDevice, MessageType::MessageType_Success, req)?
-			.ok()?;
+		let _: protos::Success = self.call(req)?.ok()?;
 		self.init_device()?;
 		Ok(())
+	}
+
+	//TODO(stevenroose) fill gap
+
+	fn pin_matrix_ack(&mut self, pin: String) -> Result<()> {
+		let mut req = protos::PinMatrixAck::new();
+		req.set_pin(pin);
+		let _: protos::Success = self.call(req)?.ok()?;
+		Ok(())
+	}
+
+	//TODO(stevenroose) fill gap
+
+	fn button_ack<R: TrezorMessage>(&mut self) -> Result<R> {
+		let req = protos::ButtonAck::new();
+		self.call(req)?.ok()
 	}
 }

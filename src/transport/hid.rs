@@ -58,7 +58,14 @@ impl Link for HidLink {
 
 	fn read_chunk(&mut self) -> Result<Vec<u8>> {
 		let mut chunk = vec![0; 64];
-		match self.handle.as_mut().unwrap().data().read(&mut chunk, Duration::from_millis(1000))? {
+		//TODO(stevenroose) have different timeouts for messages that do user input
+		match self
+			.handle
+			.as_mut()
+			.unwrap()
+			.data()
+			.read(&mut chunk, Duration::from_millis(100000))?
+		{
 			Some(64) => Ok(chunk),
 			None => Err(Error::DeviceReadTimeout),
 			Some(chunk_size) => Err(Error::UnexpectedChunkSizeFromDevice(chunk_size)),

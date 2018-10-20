@@ -7,7 +7,8 @@ extern crate secp256k1;
 mod client;
 mod constants;
 mod error;
-mod protos;
+mod messages;
+pub mod protos;
 mod transport;
 
 pub use client::{InteractionRequest, Trezor, TrezorClient, TrezorResponse};
@@ -27,7 +28,7 @@ impl fmt::Display for Model {
 		f.write_str(match self {
 			Model::Trezor1 => "Trezor 1",
 			Model::Trezor2 => "Trezor 2",
-			Model::Trezor2Bl => "Trezor 2 Bl",
+			Model::Trezor2Bl => "Trezor 2 Bootloader",
 		})
 	}
 }
