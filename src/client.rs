@@ -15,6 +15,8 @@ pub type Features = protos::Features;
 pub type ButtonRequestType = protos::ButtonRequest_ButtonRequestType;
 pub type PinMatrixRequestType = protos::PinMatrixRequest_PinMatrixRequestType;
 pub type PassphraseSource = protos::ApplySettings_PassphraseSourceType;
+pub type InputScriptType = protos::InputScriptType;
+pub type PublicKey = protos::PublicKey;
 
 pub enum WordCount {
 	W12 = 12,
@@ -245,7 +247,7 @@ impl Trezor {
 	}
 
 	pub fn init_device(&mut self) -> Result<()> {
-		self.features = Some(self.initialize()?);
+		self.features = Some(self.initialize()?.ok()?);
 		Ok(())
 	}
 
@@ -351,6 +353,19 @@ impl Trezor {
 		if let Some(auto_lock_delay_ms) = auto_lock_delay_ms {
 			req.set_auto_lock_delay_ms(auto_lock_delay_ms as u32);
 		}
+		self.call(req)
+	}
+
+	pub fn get_public_key(
+		&mut self,
+		path: Vec<u32>,
+		show_display: bool,
+		script_type: InputScriptType,
+	) -> Result<TrezorResponse<PublicKey>> {
+		let mut req = protos::GetPublicKey::new();
+		req.set_address_n(path);
+		req.set_show_display(show_display);
+		req.set_script_type(script_type);
 		self.call(req)
 	}
 }
