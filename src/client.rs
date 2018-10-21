@@ -14,6 +14,13 @@ pub type Failure = protos::Failure;
 pub type Features = protos::Features;
 pub type ButtonRequestType = protos::ButtonRequest_ButtonRequestType;
 pub type PinMatrixRequestType = protos::PinMatrixRequest_PinMatrixRequestType;
+pub type PassphraseSource = protos::ApplySettings_PassphraseSourceType;
+
+pub enum WordCount {
+	W12 = 12,
+	W18 = 18,
+	W24 = 24,
+}
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InteractionType {
@@ -244,17 +251,16 @@ impl Trezor {
 
 	//TODO(stevenroose) macronize all the things!
 
-	pub fn initialize(&mut self) -> Result<Features> {
+	pub fn initialize(&mut self) -> Result<TrezorResponse<Features>> {
 		let mut req = protos::Initialize::new();
 		req.set_state(Vec::new());
-		self.call(req)?.ok()
+		self.call(req)
 	}
 
-	pub fn ping(&mut self, message: &str) -> Result<()> {
+	pub fn ping(&mut self, message: &str) -> Result<TrezorResponse<Success>> {
 		let mut req = protos::Ping::new();
 		req.set_message(message.to_owned());
-		let _: protos::Success = self.call(req)?.ok()?;
-		Ok(())
+		self.call(req)
 	}
 
 	pub fn change_pin(&mut self, remove: bool) -> Result<TrezorResponse<Success>> {
@@ -263,10 +269,88 @@ impl Trezor {
 		self.call(req)
 	}
 
-	pub fn wipe_device(&mut self) -> Result<()> {
+	pub fn wipe_device(&mut self) -> Result<TrezorResponse<Success>> {
 		let req = protos::WipeDevice::new();
-		let _: protos::Success = self.call(req)?.ok()?;
-		self.init_device()?;
-		Ok(())
+		self.call(req)
+	}
+
+	pub fn recover_device(
+		&mut self,
+		word_count: WordCount,
+		passphrase_protection: bool,
+		pin_protection: bool,
+		label: String,
+		dry_run: bool,
+	) -> Result<TrezorResponse<Success>> {
+		let mut req = protos::RecoveryDevice::new();
+		req.set_word_count(word_count as u32);
+		req.set_passphrase_protection(passphrase_protection);
+		req.set_pin_protection(pin_protection);
+		req.set_label(label);
+		req.set_enforce_wordlist(true);
+		req.set_dry_run(dry_run);
+		req.set_field_type(
+			protos::RecoveryDevice_RecoveryDeviceType::RecoveryDeviceType_ScrambledWords,
+		);
+		//TODO(stevenroose) support languages
+		req.set_language("english".to_owned());
+		self.call(req)
+	}
+
+	pub fn reset_device(
+		&mut self,
+		display_random: bool,
+		strength: usize,
+		passphrase_protection: bool,
+		pin_protection: bool,
+		label: String,
+		skip_backup: bool,
+		no_backup: bool,
+	) -> Result<TrezorResponse<Success>> {
+		let mut req = protos::ResetDevice::new();
+		req.set_display_random(display_random);
+		req.set_strength(strength as u32);
+		req.set_passphrase_protection(passphrase_protection);
+		req.set_pin_protection(pin_protection);
+		req.set_label(label);
+		req.set_skip_backup(skip_backup);
+		req.set_no_backup(no_backup);
+		//TODO(stevenroose) support languages
+		req.set_language("english".to_owned());
+		self.call(req)
+	}
+
+	pub fn backup(&mut self) -> Result<TrezorResponse<Success>> {
+		let req = protos::BackupDevice::new();
+		self.call(req)
+	}
+
+	//TODO(stevenroose) support U2F stuff? currently ignored all
+
+	pub fn apply_settings(
+		&mut self,
+		label: Option<String>,
+		use_passphrase: Option<bool>,
+		homescreen: Option<Vec<u8>>,
+		passphrase_source: Option<PassphraseSource>,
+		auto_lock_delay_ms: Option<usize>,
+	) -> Result<TrezorResponse<Success>> {
+		let mut req = protos::ApplySettings::new();
+		if let Some(label) = label {
+			req.set_label(label);
+		}
+		if let Some(use_passphrase) = use_passphrase {
+			req.set_use_passphrase(use_passphrase);
+		}
+		if let Some(homescreen) = homescreen {
+			req.set_homescreen(homescreen);
+		}
+		if let Some(passphrase_source) = passphrase_source {
+			req.set_passphrase_source(passphrase_source);
+		}
+		if let Some(auto_lock_delay_ms) = auto_lock_delay_ms {
+			req.set_auto_lock_delay_ms(auto_lock_delay_ms as u32);
+		}
+		self.call(req)
 	}
 }

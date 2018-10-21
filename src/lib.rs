@@ -8,9 +8,10 @@ mod client;
 mod constants;
 mod error;
 mod messages;
-mod protos;
 mod transport;
 
+// Public to allow custom use of the `Trezor::call` method for unsupported currencies etc.
+pub mod protos;
 pub use client::*;
 pub use error::{Error, Result};
 pub use messages::TrezorMessage;
