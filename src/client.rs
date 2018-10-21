@@ -1,17 +1,19 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use protobuf;
-
 use super::Model;
 use error::{Error, Result};
+use messages::TrezorMessage;
+use protos;
 use protos::MessageType::*;
-use protos::{self, MessageType};
 use transport::{ProtoMessage, Transport};
 
-pub trait TrezorMessage: protobuf::Message {
-	fn message_type() -> MessageType;
-}
+// Some types with raw protos that we use in the public interface so they have to be exported.
+pub type Success = protos::Success;
+pub type Failure = protos::Failure;
+pub type Features = protos::Features;
+pub type ButtonRequestType = protos::ButtonRequest_ButtonRequestType;
+pub type PinMatrixRequestType = protos::PinMatrixRequest_PinMatrixRequestType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InteractionType {
@@ -21,7 +23,7 @@ pub enum InteractionType {
 }
 
 pub struct ButtonRequest<'a, T: TrezorMessage> {
-	pub message: protos::ButtonRequest,
+	message: protos::ButtonRequest,
 	client: &'a mut Trezor,
 	_result_type: PhantomData<T>,
 }
@@ -33,6 +35,14 @@ impl<'a, T: TrezorMessage> fmt::Debug for ButtonRequest<'a, T> {
 }
 
 impl<'a, T: TrezorMessage> ButtonRequest<'a, T> {
+	pub fn request_type(&self) -> ButtonRequestType {
+		self.message.get_code()
+	}
+
+	pub fn request_data(&self) -> &str {
+		self.message.get_data()
+	}
+
 	pub fn ack(self) -> Result<TrezorResponse<'a, T>> {
 		let req = protos::ButtonAck::new();
 		self.client.call(req)
@@ -40,7 +50,7 @@ impl<'a, T: TrezorMessage> ButtonRequest<'a, T> {
 }
 
 pub struct PinMatrixRequest<'a, T: TrezorMessage> {
-	pub message: protos::PinMatrixRequest,
+	message: protos::PinMatrixRequest,
 	client: &'a mut Trezor,
 	_result_type: PhantomData<T>,
 }
@@ -52,15 +62,24 @@ impl<'a, T: TrezorMessage> fmt::Debug for PinMatrixRequest<'a, T> {
 }
 
 impl<'a, T: TrezorMessage> PinMatrixRequest<'a, T> {
-	pub fn ack(self, pin: String) -> Result<TrezorResponse<'a, T>> {
+	pub fn request_type(&self) -> PinMatrixRequestType {
+		self.message.get_field_type()
+	}
+
+	pub fn ack_pin(self, pin: String) -> Result<TrezorResponse<'a, T>> {
 		let mut req = protos::PinMatrixAck::new();
 		req.set_pin(pin);
+		self.client.call(req)
+	}
+
+	pub fn ack(self) -> Result<TrezorResponse<'a, T>> {
+		let req = protos::PinMatrixAck::new();
 		self.client.call(req)
 	}
 }
 
 pub struct PassphraseRequest<'a, T: TrezorMessage> {
-	pub message: protos::PassphraseRequest,
+	message: protos::PassphraseRequest,
 	client: &'a mut Trezor,
 	_result_type: PhantomData<T>,
 }
@@ -72,7 +91,11 @@ impl<'a, T: TrezorMessage> fmt::Debug for PassphraseRequest<'a, T> {
 }
 
 impl<'a, T: TrezorMessage> PassphraseRequest<'a, T> {
-	pub fn ack(self, passphrase: String) -> Result<TrezorResponse<'a, T>> {
+	pub fn on_device(&self) -> bool {
+		self.message.get_on_device()
+	}
+
+	pub fn ack_passphrase(self, passphrase: String) -> Result<TrezorResponse<'a, T>> {
 		let mut req = protos::PassphraseAck::new();
 		req.set_passphrase(passphrase);
 		self.client.call(req)
@@ -82,7 +105,7 @@ impl<'a, T: TrezorMessage> PassphraseRequest<'a, T> {
 #[derive(Debug)]
 pub enum TrezorResponse<'a, T: TrezorMessage> {
 	Ok(T),
-	Failure(protos::Failure),
+	Failure(Failure),
 	ButtonRequest(ButtonRequest<'a, T>),
 	PinMatrixRequest(PinMatrixRequest<'a, T>),
 	PassphraseRequest(PassphraseRequest<'a, T>),
@@ -131,7 +154,7 @@ impl<'a, T: TrezorMessage> TrezorResponse<'a, T> {
 		}
 	}
 
-	pub fn pin_request(self) -> Result<PinMatrixRequest<'a, T>> {
+	pub fn pin_matrix_request(self) -> Result<PinMatrixRequest<'a, T>> {
 		match self {
 			TrezorResponse::PinMatrixRequest(r) => Ok(r),
 			TrezorResponse::Ok(_) => Err(Error::UnexpectedMessageType(T::message_type())),
@@ -164,7 +187,7 @@ pub struct Trezor {
 	transport: Box<Transport>,
 	pub model: Model,
 	// Cached features for later inspection.
-	pub features: Option<protos::Features>,
+	pub features: Option<Features>,
 }
 
 impl Trezor {
@@ -221,7 +244,7 @@ impl Trezor {
 
 	//TODO(stevenroose) macronize all the things!
 
-	pub fn initialize(&mut self) -> Result<protos::Features> {
+	pub fn initialize(&mut self) -> Result<Features> {
 		let mut req = protos::Initialize::new();
 		req.set_state(Vec::new());
 		self.call(req)?.ok()
@@ -234,7 +257,7 @@ impl Trezor {
 		Ok(())
 	}
 
-	pub fn change_pin(&mut self, remove: bool) -> Result<TrezorResponse<protos::Success>> {
+	pub fn change_pin(&mut self, remove: bool) -> Result<TrezorResponse<Success>> {
 		let mut req = protos::ChangePin::new();
 		req.set_remove(remove);
 		self.call(req)

@@ -17,13 +17,13 @@ fn do_main() -> Result<(), trezor_api::Error> {
 	let mut trezor = trezor_api::unique(Some(true))?;
 	trezor.init_device()?;
 
-	let old_pin = trezor.change_pin(false)?.button_request()?.ack()?.pin_request()?;
+	let old_pin = trezor.change_pin(false)?.button_request()?.ack()?.pin_matrix_request()?;
 
-	let new_pin1 = old_pin.ack(read_pin())?.pin_request()?;
+	let new_pin1 = old_pin.ack_pin(read_pin())?.pin_matrix_request()?;
 
-	let new_pin2 = new_pin1.ack(read_pin())?.pin_request()?;
+	let new_pin2 = new_pin1.ack_pin(read_pin())?.pin_matrix_request()?;
 
-	let _ = new_pin2.ack(read_pin())?.ok()?;
+	let _ = new_pin2.ack_pin(read_pin())?.ok()?;
 
 	Ok(())
 }

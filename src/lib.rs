@@ -8,13 +8,12 @@ mod client;
 mod constants;
 mod error;
 mod messages;
-pub mod protos;
+mod protos;
 mod transport;
 
-pub use client::{
-	ButtonRequest, InteractionType, PassphraseRequest, PinMatrixRequest, Trezor, TrezorResponse,
-};
+pub use client::*;
 pub use error::{Error, Result};
+pub use messages::TrezorMessage;
 
 use std::fmt;
 
