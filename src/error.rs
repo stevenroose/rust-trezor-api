@@ -4,9 +4,11 @@ use std::error;
 use std::fmt;
 use std::result;
 
-use client::{Failure, InteractionType};
+use bitcoin::util::base58;
 use hid;
 use protobuf::error::ProtobufError;
+
+use client::{Failure, InteractionType};
 use protos;
 
 /// Trezor error.
@@ -40,6 +42,12 @@ pub enum Error {
 	FailureResponse(Failure),
 	/// An unexpected interaction request was returned by the device.
 	UnexpectedInteractionRequest(InteractionType),
+	/// Error in Base58 decoding
+	Base58(base58::Error),
+	/// The given Bitcoin network is not supported.
+	UnsupportedNetwork,
+	/// The device referenced a non-existing input index.
+	TxRequestInvalidInputIndex(usize),
 }
 
 impl From<hid::Error> for Error {
@@ -54,10 +62,17 @@ impl From<ProtobufError> for Error {
 	}
 }
 
+impl From<base58::Error> for Error {
+	fn from(e: base58::Error) -> Error {
+		Error::Base58(e)
+	}
+}
+
 impl error::Error for Error {
 	fn cause(&self) -> Option<&error::Error> {
 		match *self {
 			Error::Hid(ref e) => Some(e),
+			Error::Base58(ref e) => Some(e),
 			_ => None,
 		}
 	}
@@ -86,6 +101,11 @@ impl error::Error for Error {
 			Error::UnexpectedInteractionRequest(_) => {
 				"an unexpected interaction request was returned by the device"
 			}
+			Error::Base58(ref e) => error::Error::description(e),
+			Error::UnsupportedNetwork => "given network is not supported",
+			Error::TxRequestInvalidInputIndex(_) => {
+				"the device referenced a non-existing input index"
+			}
 		}
 	}
 }
@@ -110,6 +130,10 @@ impl fmt::Display for Error {
 			),
 			Error::UnexpectedInteractionRequest(ref r) => {
 				write!(f, "unexpected interaction request: {:?}", r)
+			}
+			Error::Base58(ref e) => fmt::Display::fmt(e, f),
+			Error::TxRequestInvalidInputIndex(ref i) => {
+				write!(f, "device referenced non-existing input index: {}", i)
 			}
 			_ => f.write_str(error::Error::description(self)),
 		}

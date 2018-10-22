@@ -9,3 +9,6 @@ hid = "0.3"
 secp256k1 = "0.6"
 protobuf = "2.0"
 byteorder = "1.2"
+
+[patch.crates-io]
+bitcoin = { path = "/home/steven/code/rust/bitcoin" }

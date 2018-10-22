@@ -1,5 +1,10 @@
 use std::fmt;
 
+use bitcoin::network::constants::Network; //TODO(stevenroose) change after https://github.com/rust-bitcoin/rust-bitcoin/pull/181
+use bitcoin::util::bip32;
+use bitcoin::util::psbt;
+use bitcoin::Transaction;
+
 use super::Model;
 use error::{Error, Result};
 use messages::TrezorMessage;
@@ -211,6 +216,14 @@ impl Trezor {
 //TODO(stevenroose) should this be FnOnce and put in an FnBox?
 type ResultHandler<T, R> = Fn(R) -> Result<T>;
 
+fn coin_name(network: Network) -> Result<String> {
+	match network {
+		Network::Bitcoin => Ok("Bitcoin".to_owned()),
+		Network::Testnet => Ok("Testnet".to_owned()),
+		_ => Err(Error::UnsupportedNetwork),
+	}
+}
+
 impl Trezor {
 	pub fn call_raw<S>(&mut self, message: S) -> Result<ProtoMessage>
 	where
@@ -371,14 +384,53 @@ impl Trezor {
 
 	pub fn get_public_key(
 		&mut self,
-		path: Vec<u32>,
+		path: Vec<bip32::ChildNumber>,
 		show_display: bool,
 		script_type: InputScriptType,
-	) -> Result<TrezorResponse<PublicKey, PublicKey>> {
+		network: Network,
+	) -> Result<TrezorResponse<bip32::ExtendedPubKey, PublicKey>> {
 		let mut req = protos::GetPublicKey::new();
-		req.set_address_n(path);
+		req.set_address_n(path.into_iter().map(Into::into).collect());
 		req.set_show_display(show_display);
+		req.set_coin_name(coin_name(network)?);
 		req.set_script_type(script_type);
 		self.call(req, Box::new(|m| Ok(m)))
+
+	pub fn sign_tx(
+		&mut self,
+		psbt: psbt::PartiallySignedTransaction,
+		network: Network,
+	) -> Result<TrezorResponse<psbt::PartiallySignedTransaction, protos::TxRequest>> {
+		let tx = psbt.global.unsigned_tx;
+		let mut req = protos::SignTx::new();
+		req.set_inputs_count(tx.input.len() as u32);
+		req.set_outputs_count(tx.output.len() as u32);
+		req.set_coin_name(coin_name(network)?);
+		req.set_version(tx.version);
+		req.set_lock_time(tx.lock_time);
+		let tx_request_handler = Box::new(|req: protos::TxRequest| {
+			if req.has_serialized() {
+				let serialized = req.get_serialized();
+				if serialized.has_signature_index() {
+					let sig_idx = serialized.get_signature_index() as usize;
+					let sig_bytes = serialized.get_signature();
+					if sig_idx >= psbt.inputs.len() {
+						return Err(Error::TxRequestInvalidInputIndex(sig_idx));
+					}
+					psbt.inputs[sig_idx].final_script_sig = Some(sig_bytes.to_vec().into());
+				}
+				//TODO(stevenroose) handle serialized_tx if we need this
+			}
+
+			if req.has_request_type() {
+				let request_type = req.get_request_type();
+				match request_type {
+					protos::TxRequest_RequestType::TXFINISHED => {
+						return Ok(psbt);
+					}
+				}
+			}
+		});
+		self.call(req, tx_request_handler)
 	}
 }
