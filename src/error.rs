@@ -4,11 +4,13 @@ use std::error;
 use std::fmt;
 use std::result;
 
+use bitcoin;
 use bitcoin::util::base58;
+use bitcoin::util::hash::Sha256dHash;
 use hid;
 use protobuf::error::ProtobufError;
 
-use client::{Failure, InteractionType};
+use client::InteractionType;
 use protos;
 
 /// Trezor error.
@@ -39,15 +41,25 @@ pub enum Error {
 	/// Error reading or writing protobuf messages.
 	Protobuf(ProtobufError),
 	/// A failure message was returned by the device.
-	FailureResponse(Failure),
+	FailureResponse(protos::Failure),
 	/// An unexpected interaction request was returned by the device.
 	UnexpectedInteractionRequest(InteractionType),
 	/// Error in Base58 decoding
 	Base58(base58::Error),
 	/// The given Bitcoin network is not supported.
 	UnsupportedNetwork,
-	/// The device referenced a non-existing input index.
-	TxRequestInvalidInputIndex(usize),
+	/// The device referenced a non-existing input or output index.
+	TxRequestInvalidIndex(usize),
+	/// The device referenced an unknown TXID.
+	TxRequestUnknownTxid(Sha256dHash),
+	/// The PSBT is missing the full tx for given input.
+	PsbtMissingInputTx(Sha256dHash),
+	/// Device produced invalid TxRequest message.
+	MalformedTxRequest(protos::TxRequest),
+	/// User provided invalid PSBT.
+	InvalidPsbt(String),
+	/// Error encoding/decoding a Bitcoin data structure.
+	BitcoinEncode(bitcoin::consensus::encode::Error),
 }
 
 impl From<hid::Error> for Error {
@@ -65,6 +77,12 @@ impl From<ProtobufError> for Error {
 impl From<base58::Error> for Error {
 	fn from(e: base58::Error) -> Error {
 		Error::Base58(e)
+	}
+}
+
+impl From<bitcoin::consensus::encode::Error> for Error {
+	fn from(e: bitcoin::consensus::encode::Error) -> Error {
+		Error::BitcoinEncode(e)
 	}
 }
 
@@ -103,9 +121,14 @@ impl error::Error for Error {
 			}
 			Error::Base58(ref e) => error::Error::description(e),
 			Error::UnsupportedNetwork => "given network is not supported",
-			Error::TxRequestInvalidInputIndex(_) => {
-				"the device referenced a non-existing input index"
+			Error::TxRequestInvalidIndex(_) => {
+				"the device referenced a non-existing input or output index"
 			}
+			Error::TxRequestUnknownTxid(_) => "the device referenced an unknown TXID",
+			Error::PsbtMissingInputTx(_) => "the PSBT is missing the full tx for given input",
+			Error::MalformedTxRequest(_) => "device produced invalid TxRequest message",
+			Error::InvalidPsbt(_) => "user provided invalid PSBT",
+			Error::BitcoinEncode(_) => "error encoding/decoding a Bitcoin data structure",
 		}
 	}
 }
@@ -132,9 +155,16 @@ impl fmt::Display for Error {
 				write!(f, "unexpected interaction request: {:?}", r)
 			}
 			Error::Base58(ref e) => fmt::Display::fmt(e, f),
-			Error::TxRequestInvalidInputIndex(ref i) => {
-				write!(f, "device referenced non-existing input index: {}", i)
+			Error::TxRequestInvalidIndex(ref i) => {
+				write!(f, "device referenced non-existing input or output index: {}", i)
 			}
+			Error::TxRequestUnknownTxid(ref txid) => {
+				write!(f, "device referenced unknown TXID: {}", txid)
+			}
+			Error::PsbtMissingInputTx(ref txid) => write!(f, "PSBT missing input tx: {}", txid),
+			Error::MalformedTxRequest(ref m) => write!(f, "malformed TxRequest: {:?}", m),
+			Error::InvalidPsbt(ref m) => write!(f, "invalid PSBT: {}", m),
+			Error::BitcoinEncode(ref e) => write!(f, "bitcoin encoding error: {}", e),
 			_ => f.write_str(error::Error::description(self)),
 		}
 	}

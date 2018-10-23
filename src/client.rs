@@ -2,6 +2,7 @@ use std::fmt;
 
 use bitcoin::network::constants::Network; //TODO(stevenroose) change after https://github.com/rust-bitcoin/rust-bitcoin/pull/181
 use bitcoin::util::bip32;
+use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
 use bitcoin::Transaction;
 
@@ -13,14 +14,13 @@ use protos::MessageType::*;
 use transport::{ProtoMessage, Transport};
 
 // Some types with raw protos that we use in the public interface so they have to be exported.
-pub type Success = protos::Success;
-pub type Failure = protos::Failure;
-pub type Features = protos::Features;
-pub type ButtonRequestType = protos::ButtonRequest_ButtonRequestType;
-pub type PinMatrixRequestType = protos::PinMatrixRequest_PinMatrixRequestType;
-pub type PassphraseSource = protos::ApplySettings_PassphraseSourceType;
-pub type InputScriptType = protos::InputScriptType;
-pub type PublicKey = protos::PublicKey;
+use protos::ApplySettings_PassphraseSourceType as PassphraseSource;
+use protos::ButtonRequest_ButtonRequestType as ButtonRequestType;
+pub use protos::Features;
+use protos::InputScriptType;
+use protos::PinMatrixRequest_PinMatrixRequestType as PinMatrixRequestType;
+use protos::TxAck_TransactionType_TxOutputType_OutputScriptType as OutputScriptType;
+use protos::TxRequest_RequestType as TxRequestType;
 
 pub enum WordCount {
 	W12 = 12,
@@ -35,10 +35,13 @@ pub enum InteractionType {
 	Passphrase,
 }
 
+//TODO(stevenroose) should this be FnOnce and put in an FnBox?
+type ResultHandler<'a, T, R> = Fn(&'a mut Trezor, R) -> Result<T>;
+
 pub struct ButtonRequest<'a, T, R: TrezorMessage> {
 	message: protos::ButtonRequest,
 	client: &'a mut Trezor,
-	result_handler: Box<ResultHandler<T, R>>,
+	result_handler: Box<ResultHandler<'a, T, R>>,
 }
 
 impl<'a, T, R: TrezorMessage> fmt::Debug for ButtonRequest<'a, T, R> {
@@ -65,7 +68,7 @@ impl<'a, T, R: TrezorMessage> ButtonRequest<'a, T, R> {
 pub struct PinMatrixRequest<'a, T, R: TrezorMessage> {
 	message: protos::PinMatrixRequest,
 	client: &'a mut Trezor,
-	result_handler: Box<ResultHandler<T, R>>,
+	result_handler: Box<ResultHandler<'a, T, R>>,
 }
 
 impl<'a, T, R: TrezorMessage> fmt::Debug for PinMatrixRequest<'a, T, R> {
@@ -94,7 +97,7 @@ impl<'a, T, R: TrezorMessage> PinMatrixRequest<'a, T, R> {
 pub struct PassphraseRequest<'a, T, R: TrezorMessage> {
 	message: protos::PassphraseRequest,
 	client: &'a mut Trezor,
-	result_handler: Box<ResultHandler<T, R>>,
+	result_handler: Box<ResultHandler<'a, T, R>>,
 }
 
 impl<'a, T, R: TrezorMessage> fmt::Debug for PassphraseRequest<'a, T, R> {
@@ -118,7 +121,7 @@ impl<'a, T, R: TrezorMessage> PassphraseRequest<'a, T, R> {
 #[derive(Debug)]
 pub enum TrezorResponse<'a, T, R: TrezorMessage> {
 	Ok(T),
-	Failure(Failure),
+	Failure(protos::Failure),
 	ButtonRequest(ButtonRequest<'a, T, R>),
 	PinMatrixRequest(PinMatrixRequest<'a, T, R>),
 	PassphraseRequest(PassphraseRequest<'a, T, R>),
@@ -196,11 +199,249 @@ impl<'a, T, R: TrezorMessage> TrezorResponse<'a, T, R> {
 	}
 }
 
+/// Find the (first if multiple) PSBT input that refers to the given txid.
+fn psbt_find_input(
+	psbt: &psbt::PartiallySignedTransaction,
+	txid: Sha256dHash,
+) -> Result<&psbt::Input> {
+	let inputs = &psbt.global.unsigned_tx.input;
+	let opt = inputs.iter().enumerate().find(|i| i.1.previous_output.txid == txid);
+	let idx = opt.ok_or(Error::TxRequestUnknownTxid(txid))?.0;
+	psbt.inputs.get(idx).ok_or(Error::TxRequestInvalidIndex(idx))
+}
+
+/// Fulfill a TxRequest for TXINPUT.
+fn ack_input_request(
+	req: &protos::TxRequest,
+	psbt: &psbt::PartiallySignedTransaction,
+) -> Result<protos::TxAck> {
+	if !req.has_details() || !req.get_details().has_request_index() {
+		return Err(Error::MalformedTxRequest(req.clone()));
+	}
+
+	// Choose either the tx we are signing or a dependent tx.
+	let input_index = req.get_details().get_request_index() as usize;
+	let input = if req.get_details().has_tx_hash() {
+		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let inp = psbt_find_input(&psbt, req_hash)?;
+		let tx = inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?;
+		let opt = &tx.input.get(input_index);
+		opt.ok_or(Error::TxRequestInvalidIndex(input_index))?
+	} else {
+		let opt = &psbt.global.unsigned_tx.input.get(input_index);
+		opt.ok_or(Error::TxRequestInvalidIndex(input_index))?
+	};
+
+	let mut data_input = protos::TxAck_TransactionType_TxInputType::new();
+	data_input.set_prev_hash(input.previous_output.txid.to_bytes().to_vec());
+	data_input.set_prev_index(input.previous_output.vout);
+	data_input.set_sequence(input.sequence);
+	//TODO(stevenroose) script_type
+	//TODO(stevenroose) multisig
+
+	// Extra data only for currently signing tx.
+	if !req.get_details().has_tx_hash() {
+		let psbt_input = &psbt.inputs[input_index]; // already checked index in range
+		if psbt_input.hd_keypaths.len() == 1 {
+			data_input.set_address_n(
+				(psbt_input.hd_keypaths.iter().nth(0).unwrap().1)
+					.1
+					.iter()
+					.map(|i| i.clone().into())
+					.collect(),
+			);
+		}
+
+		if let Some(utxo) = &psbt_input.witness_utxo {
+			data_input.set_amount(utxo.value);
+		} else if let Some(ref tx) = psbt_input.non_witness_utxo {
+			data_input.set_amount(
+				tx.output
+					.get(input.previous_output.vout as usize)
+					.ok_or(Error::InvalidPsbt("utxo tx output length mismatch".to_owned()))?
+					.value,
+			);
+		}
+	}
+
+	let mut txdata = protos::TxAck_TransactionType::new();
+	txdata.mut_inputs().push(data_input);
+	let mut msg = protos::TxAck::new();
+	msg.set_tx(txdata);
+	Ok(msg)
+}
+
+/// Fulfill a TxRequest for TXOUTPUT.
+fn ack_output_request(
+	req: &protos::TxRequest,
+	psbt: &psbt::PartiallySignedTransaction,
+) -> Result<protos::TxAck> {
+	if !req.has_details() || !req.get_details().has_request_index() {
+		return Err(Error::MalformedTxRequest(req.clone()));
+	}
+
+	// For outputs, the Trezor only needs bin_outputs to be set for dependent txs and full outputs
+	// for the signing tx.
+	let mut txdata = protos::TxAck_TransactionType::new();
+	if req.get_details().has_tx_hash() {
+		// Dependent tx, take the output from the PSBT and just create bin_output.
+		let output_index = req.get_details().get_request_index() as usize;
+		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let inp = psbt_find_input(&psbt, req_hash)?;
+		let output = if let Some(ref tx) = inp.non_witness_utxo {
+			let opt = &tx.output.get(output_index);
+			opt.ok_or(Error::TxRequestInvalidIndex(output_index))?
+		} else if let Some(ref utxo) = inp.witness_utxo {
+			utxo
+		} else {
+			return Err(Error::InvalidPsbt("not all inputs have utxo data".to_owned()));
+		};
+
+		let mut bin_output = protos::TxAck_TransactionType_TxOutputBinType::new();
+		bin_output.set_amount(output.value);
+		bin_output.set_script_pubkey(output.script_pubkey.to_bytes());
+		txdata.mut_bin_outputs().push(bin_output);
+	} else {
+		// Signing tx, we need to fill the full output meta object.
+		let output_index = req.get_details().get_request_index() as usize;
+		let opt = &psbt.global.unsigned_tx.output.get(output_index);
+		let output = opt.ok_or(Error::TxRequestInvalidIndex(output_index))?;
+
+		let mut data_output = protos::TxAck_TransactionType_TxOutputType::new();
+		data_output.set_amount(output.value);
+		// Set script type to PAYTOADDRESS unless we find out otherwise from the PSBT.
+		data_output.set_script_type(OutputScriptType::PAYTOADDRESS);
+
+		let psbt_output = &psbt.outputs[output_index]; // already checked index in range
+		if psbt_output.hd_keypaths.len() == 1 {
+			data_output.set_address_n(
+				(psbt_output.hd_keypaths.iter().nth(0).unwrap().1)
+					.1
+					.iter()
+					.map(|i| i.clone().into())
+					.collect(),
+			);
+
+			// Since we know the keypath, it's probably a change output.  So update script_type.
+			let script_pubkey = &psbt.global.unsigned_tx.output[output_index].script_pubkey;
+			data_output.set_script_type(if script_pubkey.is_op_return() {
+				OutputScriptType::PAYTOOPRETURN
+			} else if psbt_output.witness_script.is_some() {
+				if psbt_output.redeem_script.is_some() {
+					OutputScriptType::PAYTOP2SHWITNESS
+				} else {
+					OutputScriptType::PAYTOWITNESS
+				}
+			} else {
+				OutputScriptType::PAYTOADDRESS
+			});
+		}
+
+		txdata.mut_outputs().push(data_output);
+	};
+
+	let mut msg = protos::TxAck::new();
+	msg.set_tx(txdata);
+	Ok(msg)
+}
+
+/// Fulfill a TxRequest for TXMETA.
+fn ack_meta_request(
+	req: &protos::TxRequest,
+	psbt: &psbt::PartiallySignedTransaction,
+) -> Result<protos::TxAck> {
+	if !req.has_details() {
+		return Err(Error::MalformedTxRequest(req.clone()));
+	}
+
+	// Choose either the tx we are signing or a dependent tx.
+	let tx: &Transaction = if req.get_details().has_tx_hash() {
+		// dependeny tx, look for it in PSBT inputs
+		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let inp = psbt_find_input(&psbt, req_hash)?;
+		inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?
+	} else {
+		// currently signing tx
+		&psbt.global.unsigned_tx
+	};
+
+	let mut txdata = protos::TxAck_TransactionType::new();
+	txdata.set_version(tx.version);
+	txdata.set_lock_time(tx.lock_time);
+	txdata.set_inputs_cnt(tx.input.len() as u32);
+	txdata.set_outputs_cnt(tx.output.len() as u32);
+	//TODO(stevenroose) python does something with extra data?
+
+	let mut msg = protos::TxAck::new();
+	msg.set_tx(txdata);
+	Ok(msg)
+}
+
+pub struct SignTxProgress<'a> {
+	client: &'a mut Trezor,
+	req: protos::TxRequest,
+}
+
+impl<'a> SignTxProgress<'a> {
+	/// Inspector to the request message received from the device.
+	pub fn tx_request(&self) -> &protos::TxRequest {
+		&self.req
+	}
+
+	/// Applies the updates received from the device to the PSBT and returns whether or not
+	/// the signing process is finished.
+	pub fn apply_finish(&self, psbt: &mut psbt::PartiallySignedTransaction) -> Result<bool> {
+		if self.req.has_serialized() {
+			let serialized = self.req.get_serialized();
+			if serialized.has_signature_index() {
+				let sig_idx = serialized.get_signature_index() as usize;
+				let sig_bytes = serialized.get_signature();
+				if sig_idx >= psbt.inputs.len() {
+					return Err(Error::TxRequestInvalidIndex(sig_idx));
+				}
+				psbt.inputs[sig_idx].final_script_sig = Some(sig_bytes.to_vec().into());
+			}
+			//TODO(stevenroose) handle serialized_tx if we need this
+		}
+
+		Ok(self.req.has_request_type() && self.req.get_request_type() == TxRequestType::TXFINISHED)
+	}
+
+	/// Provide additional PSBT information to the device.
+	/// This method will panic if apply_finish() returns true,
+	/// so it should always be checked in advance.
+	pub fn ack_psbt(
+		self,
+		psbt: &psbt::PartiallySignedTransaction,
+	) -> Result<TrezorResponse<'a, SignTxProgress<'a>, protos::TxRequest>> {
+		if !self.req.has_request_type() {
+			return Err(Error::MalformedTxRequest(self.req.clone()));
+		}
+		assert!(self.req.get_request_type() != TxRequestType::TXFINISHED);
+
+		self.client.call(
+			match self.req.get_request_type() {
+				TxRequestType::TXINPUT => ack_input_request(&self.req, &psbt),
+				TxRequestType::TXOUTPUT => ack_output_request(&self.req, &psbt),
+				TxRequestType::TXMETA => ack_meta_request(&self.req, &psbt),
+				TxRequestType::TXEXTRADATA => unimplemented!(), //TODO(stevenroose) implement
+				TxRequestType::TXFINISHED => unreachable!(),
+			}?,
+			Box::new(|c, m| {
+				Ok(SignTxProgress {
+					req: m,
+					client: c,
+				})
+			}),
+		)
+	}
+}
+
 pub struct Trezor {
 	transport: Box<Transport>,
 	pub model: Model,
 	// Cached features for later inspection.
-	pub features: Option<Features>,
+	pub features: Option<protos::Features>,
 }
 
 impl Trezor {
@@ -213,9 +454,7 @@ impl Trezor {
 	}
 }
 
-//TODO(stevenroose) should this be FnOnce and put in an FnBox?
-type ResultHandler<T, R> = Fn(R) -> Result<T>;
-
+/// Convert a bitcoin network constant to the Trezor-compatible coin_name string.
 fn coin_name(network: Network) -> Result<String> {
 	match network {
 		Network::Bitcoin => Ok("Bitcoin".to_owned()),
@@ -236,7 +475,7 @@ impl Trezor {
 	pub fn call<'a, T, S, R>(
 		&'a mut self,
 		message: S,
-		result_handler: Box<ResultHandler<T, R>>,
+		result_handler: Box<ResultHandler<'a, T, R>>,
 	) -> Result<TrezorResponse<'a, T, R>>
 	where
 		S: TrezorMessage,
@@ -244,7 +483,7 @@ impl Trezor {
 	{
 		let resp = self.call_raw(message)?;
 		if resp.message_type() == R::message_type() {
-			Ok(TrezorResponse::Ok(result_handler(resp.take_message()?)?))
+			Ok(TrezorResponse::Ok(result_handler(self, resp.take_message()?)?))
 		} else {
 			match resp.message_type() {
 				MessageType_Failure => Ok(TrezorResponse::Failure(resp.take_message()?)),
@@ -273,7 +512,8 @@ impl Trezor {
 	}
 
 	pub fn init_device(&mut self) -> Result<()> {
-		self.features = Some(self.initialize()?.ok()?);
+		let features = self.initialize()?.ok()?;
+		self.features = Some(features);
 		Ok(())
 	}
 
@@ -282,24 +522,24 @@ impl Trezor {
 	pub fn initialize(&mut self) -> Result<TrezorResponse<Features, Features>> {
 		let mut req = protos::Initialize::new();
 		req.set_state(Vec::new());
-		self.call(req, Box::new(|m| Ok(m)))
+		self.call(req, Box::new(|_, m| Ok(m)))
 	}
 
-	pub fn ping(&mut self, message: &str) -> Result<TrezorResponse<(), Success>> {
+	pub fn ping(&mut self, message: &str) -> Result<TrezorResponse<(), protos::Success>> {
 		let mut req = protos::Ping::new();
 		req.set_message(message.to_owned());
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
-	pub fn change_pin(&mut self, remove: bool) -> Result<TrezorResponse<(), Success>> {
+	pub fn change_pin(&mut self, remove: bool) -> Result<TrezorResponse<(), protos::Success>> {
 		let mut req = protos::ChangePin::new();
 		req.set_remove(remove);
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
-	pub fn wipe_device(&mut self) -> Result<TrezorResponse<(), Success>> {
+	pub fn wipe_device(&mut self) -> Result<TrezorResponse<(), protos::Success>> {
 		let req = protos::WipeDevice::new();
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
 	pub fn recover_device(
@@ -309,7 +549,7 @@ impl Trezor {
 		pin_protection: bool,
 		label: String,
 		dry_run: bool,
-	) -> Result<TrezorResponse<(), Success>> {
+	) -> Result<TrezorResponse<(), protos::Success>> {
 		let mut req = protos::RecoveryDevice::new();
 		req.set_word_count(word_count as u32);
 		req.set_passphrase_protection(passphrase_protection);
@@ -322,7 +562,7 @@ impl Trezor {
 		);
 		//TODO(stevenroose) support languages
 		req.set_language("english".to_owned());
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
 	pub fn reset_device(
@@ -334,7 +574,7 @@ impl Trezor {
 		label: String,
 		skip_backup: bool,
 		no_backup: bool,
-	) -> Result<TrezorResponse<(), Success>> {
+	) -> Result<TrezorResponse<(), protos::Success>> {
 		let mut req = protos::ResetDevice::new();
 		req.set_display_random(display_random);
 		req.set_strength(strength as u32);
@@ -345,12 +585,12 @@ impl Trezor {
 		req.set_no_backup(no_backup);
 		//TODO(stevenroose) support languages
 		req.set_language("english".to_owned());
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
-	pub fn backup(&mut self) -> Result<TrezorResponse<(), Success>> {
+	pub fn backup(&mut self) -> Result<TrezorResponse<(), protos::Success>> {
 		let req = protos::BackupDevice::new();
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
 	//TODO(stevenroose) support U2F stuff? currently ignored all
@@ -362,7 +602,7 @@ impl Trezor {
 		homescreen: Option<Vec<u8>>,
 		passphrase_source: Option<PassphraseSource>,
 		auto_lock_delay_ms: Option<usize>,
-	) -> Result<TrezorResponse<(), Success>> {
+	) -> Result<TrezorResponse<(), protos::Success>> {
 		let mut req = protos::ApplySettings::new();
 		if let Some(label) = label {
 			req.set_label(label);
@@ -379,7 +619,7 @@ impl Trezor {
 		if let Some(auto_lock_delay_ms) = auto_lock_delay_ms {
 			req.set_auto_lock_delay_ms(auto_lock_delay_ms as u32);
 		}
-		self.call(req, Box::new(|_| Ok(())))
+		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
 	pub fn get_public_key(
@@ -388,49 +628,35 @@ impl Trezor {
 		show_display: bool,
 		script_type: InputScriptType,
 		network: Network,
-	) -> Result<TrezorResponse<bip32::ExtendedPubKey, PublicKey>> {
+	) -> Result<TrezorResponse<bip32::ExtendedPubKey, protos::PublicKey>> {
 		let mut req = protos::GetPublicKey::new();
 		req.set_address_n(path.into_iter().map(Into::into).collect());
 		req.set_show_display(show_display);
 		req.set_coin_name(coin_name(network)?);
 		req.set_script_type(script_type);
-		self.call(req, Box::new(|m| Ok(m)))
+		self.call(req, Box::new(|_, m| Ok(m.get_xpub().parse()?)))
+	}
 
 	pub fn sign_tx(
 		&mut self,
-		psbt: psbt::PartiallySignedTransaction,
+		psbt: &psbt::PartiallySignedTransaction,
 		network: Network,
-	) -> Result<TrezorResponse<psbt::PartiallySignedTransaction, protos::TxRequest>> {
-		let tx = psbt.global.unsigned_tx;
+	) -> Result<TrezorResponse<SignTxProgress, protos::TxRequest>> {
+		let tx = &psbt.global.unsigned_tx;
 		let mut req = protos::SignTx::new();
 		req.set_inputs_count(tx.input.len() as u32);
 		req.set_outputs_count(tx.output.len() as u32);
 		req.set_coin_name(coin_name(network)?);
 		req.set_version(tx.version);
 		req.set_lock_time(tx.lock_time);
-		let tx_request_handler = Box::new(|req: protos::TxRequest| {
-			if req.has_serialized() {
-				let serialized = req.get_serialized();
-				if serialized.has_signature_index() {
-					let sig_idx = serialized.get_signature_index() as usize;
-					let sig_bytes = serialized.get_signature();
-					if sig_idx >= psbt.inputs.len() {
-						return Err(Error::TxRequestInvalidInputIndex(sig_idx));
-					}
-					psbt.inputs[sig_idx].final_script_sig = Some(sig_bytes.to_vec().into());
-				}
-				//TODO(stevenroose) handle serialized_tx if we need this
-			}
-
-			if req.has_request_type() {
-				let request_type = req.get_request_type();
-				match request_type {
-					protos::TxRequest_RequestType::TXFINISHED => {
-						return Ok(psbt);
-					}
-				}
-			}
-		});
-		self.call(req, tx_request_handler)
+		self.call(
+			req,
+			Box::new(|c, m| {
+				Ok(SignTxProgress {
+					req: m,
+					client: c,
+				})
+			}),
+		)
 	}
 }

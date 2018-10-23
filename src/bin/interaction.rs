@@ -3,7 +3,7 @@ extern crate trezor_api;
 
 use std::io;
 
-use bitcoin::{network::constants::Network, Address};
+use bitcoin::{network::constants::Network, util::bip32, Address};
 use trezor_api::{Error, TrezorMessage, TrezorResponse};
 
 fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result<T, Error> {
@@ -21,7 +21,7 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result
 			handle_interaction(req.ack_pin(pin[..4].to_owned())?)
 		}
 		TrezorResponse::PassphraseRequest(req) => {
-			println!("Enter PIN");
+			println!("Enter passphrase");
 			let mut pass = String::new();
 			io::stdin().read_line(&mut pass).unwrap();
 			// trim newline
@@ -36,13 +36,18 @@ fn do_main() -> Result<(), trezor_api::Error> {
 	trezor.init_device()?;
 
 	let xpub = handle_interaction(trezor.get_public_key(
-		vec![0, 0, 2],
+		vec![
+			bip32::ChildNumber::from_hardened_idx(0),
+			bip32::ChildNumber::from_hardened_idx(0),
+			bip32::ChildNumber::from_hardened_idx(0),
+		],
 		true,
 		trezor_api::protos::InputScriptType::SPENDADDRESS,
+		Network::Testnet,
 	)?)?;
 	println!("{}", xpub);
 	println!("{:?}", xpub);
-	println!("{}", Address::p2pkh(&xpub.public_key, Network::Bitcoin));
+	println!("{}", Address::p2pkh(&xpub.public_key, Network::Testnet));
 
 	Ok(())
 }
