@@ -8,9 +8,6 @@ use protos::MessageType;
 pub mod hid;
 pub mod protocol;
 
-//mod messages;
-//pub use self::messages::ProtoMessage;
-
 #[derive(Debug)]
 pub enum AvailableDeviceTransport {
 	Hid(hid::AvailableHidTransport),
