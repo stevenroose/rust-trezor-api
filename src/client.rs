@@ -312,7 +312,10 @@ fn ack_output_request(
 		// Set script type to PAYTOADDRESS unless we find out otherwise from the PSBT.
 		data_output.set_script_type(OutputScriptType::PAYTOADDRESS);
 
-		let psbt_output = &psbt.outputs[output_index]; // already checked index in range
+		let psbt_output = psbt
+			.outputs
+			.get(output_index)
+			.ok_or(Error::InvalidPsbt("output indices don't match".to_owned()))?;
 		if psbt_output.hd_keypaths.len() == 1 {
 			data_output.set_address_n(
 				(psbt_output.hd_keypaths.iter().nth(0).unwrap().1)
@@ -464,23 +467,16 @@ fn coin_name(network: Network) -> Result<String> {
 }
 
 impl Trezor {
-	pub fn call_raw<S>(&mut self, message: S) -> Result<ProtoMessage>
-	where
-		S: TrezorMessage,
-	{
+	pub fn call_raw<S: TrezorMessage>(&mut self, message: S) -> Result<ProtoMessage> {
 		self.transport.write_message(ProtoMessage(S::message_type(), message.write_to_bytes()?))?;
 		self.transport.read_message()
 	}
 
-	pub fn call<'a, T, S, R>(
+	pub fn call<'a, T, S: TrezorMessage, R: TrezorMessage>(
 		&'a mut self,
 		message: S,
 		result_handler: Box<ResultHandler<'a, T, R>>,
-	) -> Result<TrezorResponse<'a, T, R>>
-	where
-		S: TrezorMessage,
-		R: TrezorMessage,
-	{
+	) -> Result<TrezorResponse<'a, T, R>> {
 		let resp = self.call_raw(message)?;
 		if resp.message_type() == R::message_type() {
 			Ok(TrezorResponse::Ok(result_handler(self, resp.take_message()?)?))
@@ -583,8 +579,6 @@ impl Trezor {
 		req.set_label(label);
 		req.set_skip_backup(skip_backup);
 		req.set_no_backup(no_backup);
-		//TODO(stevenroose) support languages
-		req.set_language("english".to_owned());
 		self.call(req, Box::new(|_, _| Ok(())))
 	}
 
