@@ -5,6 +5,7 @@ use bitcoin::util::bip32;
 use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
 use bitcoin::Transaction;
+use hex;
 
 use super::Model;
 use error::{Error, Result};
@@ -223,11 +224,13 @@ fn ack_input_request(
 	let input_index = req.get_details().get_request_index() as usize;
 	let input = if req.get_details().has_tx_hash() {
 		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		trace!("Preparing ack for input {}:{}", req_hash, input_index);
 		let inp = psbt_find_input(&psbt, req_hash)?;
 		let tx = inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?;
 		let opt = &tx.input.get(input_index);
 		opt.ok_or(Error::TxRequestInvalidIndex(input_index))?
 	} else {
+		trace!("Preparing ack for tx input #{}", input_index);
 		let opt = &psbt.global.unsigned_tx.input.get(input_index);
 		opt.ok_or(Error::TxRequestInvalidIndex(input_index))?
 	};
@@ -264,6 +267,7 @@ fn ack_input_request(
 		}
 	}
 
+	trace!("Prepared input to ack: {:?}", data_input);
 	let mut txdata = protos::TxAck_TransactionType::new();
 	txdata.mut_inputs().push(data_input);
 	let mut msg = protos::TxAck::new();
@@ -287,6 +291,7 @@ fn ack_output_request(
 		// Dependent tx, take the output from the PSBT and just create bin_output.
 		let output_index = req.get_details().get_request_index() as usize;
 		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		trace!("Preparing ack for output {}:{}", req_hash, output_index);
 		let inp = psbt_find_input(&psbt, req_hash)?;
 		let output = if let Some(ref tx) = inp.non_witness_utxo {
 			let opt = &tx.output.get(output_index);
@@ -300,10 +305,13 @@ fn ack_output_request(
 		let mut bin_output = protos::TxAck_TransactionType_TxOutputBinType::new();
 		bin_output.set_amount(output.value);
 		bin_output.set_script_pubkey(output.script_pubkey.to_bytes());
+
+		trace!("Prepared bin_output to ack: {:?}", bin_output);
 		txdata.mut_bin_outputs().push(bin_output);
 	} else {
 		// Signing tx, we need to fill the full output meta object.
 		let output_index = req.get_details().get_request_index() as usize;
+		trace!("Preparing ack for tx output #{}", output_index);
 		let opt = &psbt.global.unsigned_tx.output.get(output_index);
 		let output = opt.ok_or(Error::TxRequestInvalidIndex(output_index))?;
 
@@ -340,6 +348,7 @@ fn ack_output_request(
 			});
 		}
 
+		trace!("Prepared output to ack: {:?}", data_output);
 		txdata.mut_outputs().push(data_output);
 	};
 
@@ -361,10 +370,12 @@ fn ack_meta_request(
 	let tx: &Transaction = if req.get_details().has_tx_hash() {
 		// dependeny tx, look for it in PSBT inputs
 		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		trace!("Preparing ack for tx meta of {}", req_hash);
 		let inp = psbt_find_input(&psbt, req_hash)?;
 		inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?
 	} else {
 		// currently signing tx
+		trace!("Preparing ack for tx meta of tx being signed");
 		&psbt.global.unsigned_tx
 	};
 
@@ -375,6 +386,7 @@ fn ack_meta_request(
 	txdata.set_outputs_cnt(tx.output.len() as u32);
 	//TODO(stevenroose) python does something with extra data?
 
+	trace!("Prepared tx meta to ack: {:?}", txdata);
 	let mut msg = protos::TxAck::new();
 	msg.set_tx(txdata);
 	Ok(msg)
@@ -402,6 +414,7 @@ impl<'a> SignTxProgress<'a> {
 				if sig_idx >= psbt.inputs.len() {
 					return Err(Error::TxRequestInvalidIndex(sig_idx));
 				}
+				trace!("Adding signature #{}: {}", sig_idx, hex::encode(sig_bytes));
 				psbt.inputs[sig_idx].final_script_sig = Some(sig_bytes.to_vec().into());
 			}
 			//TODO(stevenroose) handle serialized_tx if we need this
@@ -467,42 +480,71 @@ fn coin_name(network: Network) -> Result<String> {
 }
 
 impl Trezor {
+	/// Sends a message and returns the raw ProtoMessage struct that was responded by the device.
+	/// This method is only exported for users that want to expand the features of this library
+	/// f.e. for supporting additional coins etc.
 	pub fn call_raw<S: TrezorMessage>(&mut self, message: S) -> Result<ProtoMessage> {
 		self.transport.write_message(ProtoMessage(S::message_type(), message.write_to_bytes()?))?;
 		self.transport.read_message()
 	}
 
+	/// Sends a message and returns a TrezorResponse with either the expected response message,
+	/// a failure or an interaction request.
+	/// This method is only exported for users that want to expand the features of this library
+	/// f.e. for supporting additional coins etc.
 	pub fn call<'a, T, S: TrezorMessage, R: TrezorMessage>(
 		&'a mut self,
 		message: S,
 		result_handler: Box<ResultHandler<'a, T, R>>,
 	) -> Result<TrezorResponse<'a, T, R>> {
+		trace!("Sending {:?} msg: {:?}", S::message_type(), message);
 		let resp = self.call_raw(message)?;
 		if resp.message_type() == R::message_type() {
-			Ok(TrezorResponse::Ok(result_handler(self, resp.take_message()?)?))
+			let resp_msg = resp.take_message()?;
+			trace!("Received {:?} msg: {:?}", R::message_type(), resp_msg);
+			Ok(TrezorResponse::Ok(result_handler(self, resp_msg)?))
 		} else {
 			match resp.message_type() {
-				MessageType_Failure => Ok(TrezorResponse::Failure(resp.take_message()?)),
-				MessageType_ButtonRequest => Ok(TrezorResponse::ButtonRequest(ButtonRequest {
-					message: resp.take_message()?,
-					client: self,
-					result_handler: result_handler,
-				})),
+				MessageType_Failure => {
+					let fail_msg = resp.take_message()?;
+					debug!("Received failure: {:?}", fail_msg);
+					Ok(TrezorResponse::Failure(fail_msg))
+				}
+				MessageType_ButtonRequest => {
+					let req_msg = resp.take_message()?;
+					trace!("Received ButtonRequest: {:?}", req_msg);
+					Ok(TrezorResponse::ButtonRequest(ButtonRequest {
+						message: req_msg,
+						client: self,
+						result_handler: result_handler,
+					}))
+				}
 				MessageType_PinMatrixRequest => {
+					let req_msg = resp.take_message()?;
+					trace!("Received PinMatrixRequest: {:?}", req_msg);
 					Ok(TrezorResponse::PinMatrixRequest(PinMatrixRequest {
-						message: resp.take_message()?,
+						message: req_msg,
 						client: self,
 						result_handler: result_handler,
 					}))
 				}
 				MessageType_PassphraseRequest => {
+					let req_msg = resp.take_message()?;
+					trace!("Received PassphraseRequest: {:?}", req_msg);
 					Ok(TrezorResponse::PassphraseRequest(PassphraseRequest {
-						message: resp.take_message()?,
+						message: req_msg,
 						client: self,
 						result_handler: result_handler,
 					}))
 				}
-				mtype => Err(Error::UnexpectedMessageType(mtype)),
+				mtype => {
+					debug!(
+						"Received unexpected msg type: {:?}; raw msg: {}",
+						mtype,
+						hex::encode(resp.take_payload())
+					);
+					Err(Error::UnexpectedMessageType(mtype))
+				}
 			}
 		}
 	}

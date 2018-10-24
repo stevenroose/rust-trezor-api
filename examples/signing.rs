@@ -1,5 +1,8 @@
 extern crate bitcoin;
+extern crate chrono;
+extern crate fern;
 extern crate hex;
+extern crate log;
 extern crate trezor_api;
 
 use std::collections::HashMap;
@@ -15,7 +18,24 @@ use bitcoin::{
 	util::psbt,
 	Address, OutPoint, Transaction, TxIn, TxOut,
 };
+
 use trezor_api::{Error, SignTxProgress, TrezorMessage, TrezorResponse};
+
+fn setup_logger() {
+	fern::Dispatch::new()
+		.format(|out, message, record| {
+			out.finish(format_args!(
+				"{}[{}][{}] {}",
+				chrono::Local::now().format("[%H:%M:%S]"),
+				record.target(),
+				record.level(),
+				message
+			))
+		}).level(log::LevelFilter::Trace)
+		.chain(std::io::stderr())
+		.apply()
+		.unwrap();
+}
 
 fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> T {
 	match resp {
@@ -41,21 +61,10 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> T {
 	}
 }
 
-fn print_tx_request(req: &trezor_api::protos::TxRequest) {
-	println!("Request: \n  type: {:?}", req.get_request_type());
-	let details = req.get_details();
-	if details.has_tx_hash() {
-		let hash: Sha256dHash = details.get_tx_hash().into();
-		println!("  {}", hash);
-	}
-	println!("  {}", details.get_request_index());
-}
-
 fn tx_progress(
 	psbt: &mut psbt::PartiallySignedTransaction,
 	progress: SignTxProgress,
 ) -> Result<(), Error> {
-	print_tx_request(progress.tx_request());
 	if !progress.apply_finish(psbt).unwrap() {
 		let progress = handle_interaction(progress.ack_psbt(&psbt).unwrap());
 		tx_progress(psbt, progress)
@@ -65,6 +74,7 @@ fn tx_progress(
 }
 
 fn main() {
+	setup_logger();
 	// init with debugging
 	let mut trezor = trezor_api::unique(Some(true)).unwrap();
 	trezor.init_device().unwrap();
@@ -83,7 +93,7 @@ fn main() {
 			).unwrap(),
 	);
 	let addr = Address::p2pkh(&pubkey.public_key, Network::Testnet);
-	println!("{}", addr);
+	println!("address: {}", addr);
 
 	let mut psbt = psbt::PartiallySignedTransaction {
 		global: psbt::Global {
@@ -126,12 +136,18 @@ fn main() {
 		],
 	};
 
-	println!("{}", psbt.global.unsigned_tx.bitcoin_hash());
+	println!("psbt before: {:?}", psbt);
+	println!("unsigned txid: {}", psbt.global.unsigned_tx.bitcoin_hash());
+	println!(
+		"unsigned tx: {}",
+		hex::encode(bitcoin::consensus::encode::serialize(&psbt.global.unsigned_tx))
+	);
 
 	let progress = handle_interaction(trezor.sign_tx(&psbt, Network::Testnet).unwrap());
 	tx_progress(&mut psbt, progress).unwrap();
 
-	println!("{:?}", psbt);
+	println!("psbt after: {:?}", psbt);
 	let signed_tx = psbt.extract_tx();
-	println!("{}", hex::encode(bitcoin::consensus::encode::serialize(&signed_tx)));
+	println!("signed txid: {}", signed_tx.bitcoin_hash());
+	println!("signed tx: {}", hex::encode(bitcoin::consensus::encode::serialize(&signed_tx)));
 }

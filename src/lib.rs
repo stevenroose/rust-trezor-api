@@ -1,6 +1,9 @@
 extern crate bitcoin;
 extern crate byteorder;
+extern crate hex;
 extern crate hid;
+#[macro_use]
+extern crate log;
 extern crate protobuf;
 extern crate secp256k1;
 
@@ -17,6 +20,13 @@ pub use error::{Error, Result};
 pub use messages::TrezorMessage;
 
 use std::fmt;
+
+///! # Trezor API library
+///!
+///!
+///! ## Logging
+///! We use the log package interface, so any logger that supports log can be attached.
+///! Please be aware that `trace` logging can contain sensitive data.
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Model {
@@ -71,6 +81,9 @@ pub fn unique(debug: Option<bool>) -> Result<Trezor> {
 	match devices.len() {
 		0 => Err(Error::NoDeviceFound),
 		1 => Ok(devices.remove(0).connect()?),
-		_ => Err(Error::DeviceNotUnique),
+		_ => {
+			debug!("Trezor devices found: {:?}", devices);
+			Err(Error::DeviceNotUnique)
+		}
 	}
 }
