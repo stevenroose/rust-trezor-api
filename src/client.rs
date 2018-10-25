@@ -238,13 +238,19 @@ fn ack_input_request(
 	let mut data_input = protos::TxAck_TransactionType_TxInputType::new();
 	data_input.set_prev_hash(input.previous_output.txid.to_bytes().to_vec());
 	data_input.set_prev_index(input.previous_output.vout);
+	data_input.set_script_sig(input.script_sig.to_bytes());
 	data_input.set_sequence(input.sequence);
 	//TODO(stevenroose) script_type
 	//TODO(stevenroose) multisig
 
 	// Extra data only for currently signing tx.
 	if !req.get_details().has_tx_hash() {
-		let psbt_input = &psbt.inputs[input_index]; // already checked index in range
+		let psbt_input = psbt
+			.inputs
+			.get(input_index)
+			.ok_or(Error::InvalidPsbt("not enough psbt inputs".to_owned()))?;
+
+		// If there is exactly 1 HD keypath known, we can provide it.  If more it's multisig.
 		if psbt_input.hd_keypaths.len() == 1 {
 			data_input.set_address_n(
 				(psbt_input.hd_keypaths.iter().nth(0).unwrap().1)
@@ -255,16 +261,16 @@ fn ack_input_request(
 			);
 		}
 
-		if let Some(utxo) = &psbt_input.witness_utxo {
-			data_input.set_amount(utxo.value);
+		data_input.set_amount(if let Some(utxo) = &psbt_input.witness_utxo {
+			utxo.value
 		} else if let Some(ref tx) = psbt_input.non_witness_utxo {
-			data_input.set_amount(
-				tx.output
-					.get(input.previous_output.vout as usize)
-					.ok_or(Error::InvalidPsbt("utxo tx output length mismatch".to_owned()))?
-					.value,
-			);
-		}
+			tx.output
+				.get(input.previous_output.vout as usize)
+				.ok_or(Error::InvalidPsbt("utxo tx output length mismatch".to_owned()))?
+				.value
+		} else {
+			return Err(Error::InvalidPsbt(format!("no utxo for PSBT input {}", input_index)));
+		});
 	}
 
 	trace!("Prepared input to ack: {:?}", data_input);
