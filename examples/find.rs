@@ -1,7 +1,7 @@
-extern crate trezor_api;
+extern crate trezor;
 
 fn main() {
-	let trezors = trezor_api::find_devices().unwrap();
+	let trezors = trezor::find_devices().unwrap();
 	println!("Found {} devices: ", trezors.len());
 	for t in trezors.into_iter() {
 		println!("- {}", t);

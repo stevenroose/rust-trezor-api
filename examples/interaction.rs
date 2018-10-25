@@ -1,10 +1,10 @@
 extern crate bitcoin;
-extern crate trezor_api;
+extern crate trezor;
 
 use std::io;
 
 use bitcoin::{network::constants::Network, util::bip32, Address};
-use trezor_api::{Error, TrezorMessage, TrezorResponse};
+use trezor::{Error, TrezorMessage, TrezorResponse};
 
 fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result<T, Error> {
 	match resp {
@@ -30,9 +30,9 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result
 	}
 }
 
-fn do_main() -> Result<(), trezor_api::Error> {
+fn do_main() -> Result<(), trezor::Error> {
 	// init with debugging
-	let mut trezor = trezor_api::unique(Some(true))?;
+	let mut trezor = trezor::unique(Some(true))?;
 	trezor.init_device()?;
 
 	let xpub = handle_interaction(trezor.get_public_key(
@@ -42,7 +42,7 @@ fn do_main() -> Result<(), trezor_api::Error> {
 			bip32::ChildNumber::from_hardened_idx(0),
 		],
 		true,
-		trezor_api::protos::InputScriptType::SPENDADDRESS,
+		trezor::protos::InputScriptType::SPENDADDRESS,
 		Network::Testnet,
 	)?)?;
 	println!("{}", xpub);

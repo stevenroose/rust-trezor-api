@@ -240,8 +240,6 @@ fn ack_input_request(
 	data_input.set_prev_index(input.previous_output.vout);
 	data_input.set_script_sig(input.script_sig.to_bytes());
 	data_input.set_sequence(input.sequence);
-	//TODO(stevenroose) script_type
-	//TODO(stevenroose) multisig
 
 	// Extra data only for currently signing tx.
 	if !req.get_details().has_tx_hash() {
@@ -260,6 +258,8 @@ fn ack_input_request(
 					.collect(),
 			);
 		}
+		//TODO(stevenroose) script_type
+		//TODO(stevenroose) multisig
 
 		data_input.set_amount(if let Some(utxo) = &psbt_input.witness_utxo {
 			utxo.value
@@ -341,17 +341,18 @@ fn ack_output_request(
 
 			// Since we know the keypath, it's probably a change output.  So update script_type.
 			let script_pubkey = &psbt.global.unsigned_tx.output[output_index].script_pubkey;
-			data_output.set_script_type(if script_pubkey.is_op_return() {
-				OutputScriptType::PAYTOOPRETURN
+			if script_pubkey.is_op_return() {
+				data_output.set_script_type(OutputScriptType::PAYTOOPRETURN);
+				data_output.set_op_return_data(script_pubkey.as_bytes()[1..].to_vec());
 			} else if psbt_output.witness_script.is_some() {
 				if psbt_output.redeem_script.is_some() {
-					OutputScriptType::PAYTOP2SHWITNESS
+					data_output.set_script_type(OutputScriptType::PAYTOP2SHWITNESS);
 				} else {
-					OutputScriptType::PAYTOWITNESS
+					data_output.set_script_type(OutputScriptType::PAYTOWITNESS);
 				}
 			} else {
-				OutputScriptType::PAYTOADDRESS
-			});
+				data_output.set_script_type(OutputScriptType::PAYTOADDRESS);
+			}
 		}
 
 		trace!("Prepared output to ack: {:?}", data_output);
