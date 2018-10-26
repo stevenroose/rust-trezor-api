@@ -8,27 +8,40 @@ extern crate log;
 extern crate protobuf;
 extern crate secp256k1;
 
-mod client;
-mod constants;
 mod error;
 mod messages;
 mod transport;
 
 // Public to allow custom use of the `Trezor::call` method for unsupported currencies etc.
+pub mod client;
 pub mod protos;
-pub use client::*;
+
+pub use client::{
+	ButtonRequest, ButtonRequestType, EntropyRequest, Features, InputScriptType, InteractionType,
+	PassphraseRequest, PinMatrixRequest, PinMatrixRequestType, SignTxProgress, Trezor,
+	TrezorResponse, WordCount,
+};
 pub use error::{Error, Result};
 pub use messages::TrezorMessage;
 
 use std::fmt;
 
+///!
 ///! # Trezor API library
 ///!
+///! ## Connecting
+///!
+///! Use the public top-level methods `find_devices()` and `unique()` to find devices.  When using
+///! `find_devices()`, a list of different available devices is returned.  To connect to one or more
+///! of them, use their `connect()` method.
 ///!
 ///! ## Logging
+///!
 ///! We use the log package interface, so any logger that supports log can be attached.
 ///! Please be aware that `trace` logging can contain sensitive data.
+///!
 
+/// The different kind of Trezor device models.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Model {
 	Trezor1,
@@ -46,6 +59,8 @@ impl fmt::Display for Model {
 	}
 }
 
+/// A device found by the `find_devices()` method.  It can be connected to using the `connect()`
+/// method.
 #[derive(Debug)]
 pub struct AvailableDevice {
 	pub model: Model,
@@ -60,9 +75,10 @@ impl fmt::Display for AvailableDevice {
 }
 
 impl AvailableDevice {
+	/// Connect to the device.
 	pub fn connect(self) -> Result<Trezor> {
 		let transport = transport::connect(&self)?;
-		Ok(Trezor::new(self.model, transport))
+		Ok(client::trezor_with_transport(self.model, transport))
 	}
 }
 
@@ -74,6 +90,8 @@ pub fn find_devices() -> Result<Vec<AvailableDevice>> {
 /// Try to get a single device.  Optionally specify whether debug should be enabled or not.
 /// Can error if there are multiple or no devices available.
 /// For more fine-grained device selection, use `find_devices()`.
+/// When using USB mode, the device will show up both with debug and without debug, so it's
+/// necessary to specify the debug option in order to find a unique one.
 pub fn unique(debug: Option<bool>) -> Result<Trezor> {
 	let mut devices = find_devices()?;
 	if let Some(debug) = debug {

@@ -1,28 +1,19 @@
 extern crate bitcoin;
-extern crate chrono;
 extern crate fern;
 extern crate hex;
 extern crate log;
-extern crate secp256k1;
 extern crate trezor;
 
 use std::io;
 
 use bitcoin::{network::constants::Network, util::bip32, Address};
-use secp256k1::Secp256k1;
 
 use trezor::{InputScriptType, TrezorMessage, TrezorResponse};
 
 fn setup_logger() {
 	fern::Dispatch::new()
 		.format(|out, message, record| {
-			out.finish(format_args!(
-				"{}[{}][{}] {}",
-				chrono::Local::now().format("[%H:%M:%S]"),
-				record.target(),
-				record.level(),
-				message
-			))
+			out.finish(format_args!("[{}][{}] {}", record.target(), record.level(), message))
 		}).level(log::LevelFilter::Trace)
 		.chain(std::io::stderr())
 		.apply()

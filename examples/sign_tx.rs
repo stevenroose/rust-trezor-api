@@ -1,5 +1,4 @@
 extern crate bitcoin;
-extern crate chrono;
 extern crate fern;
 extern crate hex;
 extern crate log;
@@ -10,13 +9,8 @@ use std::io;
 use std::iter::FromIterator;
 
 use bitcoin::{
-	blockdata::script::Builder,
-	consensus::encode::Decodable,
-	network::constants::Network,
-	util::bip32,
-	util::hash::{BitcoinHash, Sha256dHash},
-	util::psbt,
-	Address, OutPoint, Transaction, TxIn, TxOut,
+	blockdata::script::Builder, consensus::encode::Decodable, network::constants::Network,
+	util::bip32, util::hash::BitcoinHash, util::psbt, Address, OutPoint, Transaction, TxIn, TxOut,
 };
 
 use trezor::{Error, SignTxProgress, TrezorMessage, TrezorResponse};
@@ -24,13 +18,7 @@ use trezor::{Error, SignTxProgress, TrezorMessage, TrezorResponse};
 fn setup_logger() {
 	fern::Dispatch::new()
 		.format(|out, message, record| {
-			out.finish(format_args!(
-				"{}[{}][{}] {}",
-				chrono::Local::now().format("[%H:%M:%S]"),
-				record.target(),
-				record.level(),
-				message
-			))
+			out.finish(format_args!("[{}][{}] {}", record.target(), record.level(), message))
 		}).level(log::LevelFilter::Trace)
 		.chain(std::io::stderr())
 		.apply()
@@ -65,7 +53,7 @@ fn tx_progress(
 	psbt: &mut psbt::PartiallySignedTransaction,
 	progress: SignTxProgress,
 ) -> Result<(), Error> {
-	if !progress.apply_finish(psbt).unwrap() {
+	if !progress.apply(psbt).unwrap() {
 		let progress = handle_interaction(progress.ack_psbt(&psbt).unwrap());
 		tx_progress(psbt, progress)
 	} else {

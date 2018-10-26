@@ -7,11 +7,14 @@ use error::{Error, Result};
 use protos::MessageType;
 use transport::ProtoMessage;
 
+/// A link represents a serial connection to send and receive byte chunks from and to a device.
 pub trait Link {
 	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<()>;
 	fn read_chunk(&mut self) -> Result<Vec<u8>>;
 }
 
+/// A protocol is used to encode messages in chunks that can be sent to the device and to parse
+/// chunks into messages.
 pub trait Protocol {
 	fn session_begin(&mut self) -> Result<()>;
 	fn session_end(&mut self) -> Result<()>;
@@ -19,10 +22,11 @@ pub trait Protocol {
 	fn read(&mut self) -> Result<ProtoMessage>;
 }
 
+/// The length of the chunks sent.
 const REPLEN: usize = 64;
 
-/// V2 of the binary protocol.  This version is currently not in use by any device and is subject
-/// to change.
+/// V2 of the binary protocol.
+/// This version is currently not in use by any device and is subject to change.
 #[allow(dead_code)]
 pub struct ProtocolV2<L: Link> {
 	pub link: L,
@@ -63,7 +67,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		let mut data = vec![0; 8];
 		BigEndian::write_u32(&mut data[0..4], message.message_type() as u32);
 		BigEndian::write_u32(&mut data[4..8], message.payload().len() as u32);
-		data.extend(message.payload());
+		data.extend(message.take_payload());
 
 		let mut cur: usize = 0;
 		let mut seq: isize = -1;
@@ -133,6 +137,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 	}
 }
 
+/// The original binary protocol.
 pub struct ProtocolV1<L: Link> {
 	pub link: L,
 }
@@ -153,7 +158,7 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 		data[1] = 0x23;
 		BigEndian::write_u16(&mut data[2..4], message.message_type() as u16);
 		BigEndian::write_u32(&mut data[4..8], message.payload().len() as u32);
-		data.extend(message.payload());
+		data.extend(message.take_payload());
 
 		let mut cur: usize = 0;
 		while cur < data.len() {

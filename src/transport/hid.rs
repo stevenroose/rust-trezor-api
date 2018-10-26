@@ -4,19 +4,34 @@ use std::time::Duration;
 use hid;
 
 use super::super::{AvailableDevice, Model};
-use constants;
 use error::{Error, Result};
 use transport::protocol::{Link, Protocol, ProtocolV1};
 use transport::{AvailableDeviceTransport, ProtoMessage, Transport};
 
+mod constants {
+	///! A collection of constants related to the HID protocol.
+
+	pub const DEV_TREZOR1: (u16, u16) = (0x534C, 0x0001);
+	pub const DEV_TREZOR2: (u16, u16) = (0x1209, 0x53C1);
+	pub const DEV_TREZOR2_BL: (u16, u16) = (0x1209, 0x53C0);
+
+	pub const WIRELINK_USAGE: u16 = 0xFF00;
+	pub const WIRELINK_INTERFACE: isize = 0;
+	pub const DEBUGLINK_USAGE: u16 = 0xFF01;
+	pub const DEBUGLINK_INTERFACE: isize = 1;
+}
+
+/// The chunk size for the serial protocol.
 const CHUNK_SIZE: usize = 64;
 
+/// There are two different HID link protocol versions.
 #[derive(Debug)]
 enum HidVersion {
 	V1,
 	V2,
 }
 
+/// An available transport for connecting with a device.
 #[derive(Debug)]
 pub struct AvailableHidTransport {
 	pub serial_nb: String,
@@ -28,6 +43,7 @@ impl fmt::Display for AvailableHidTransport {
 	}
 }
 
+/// An actual serial HID USB link to a device over which bytes can be sent.
 pub struct HidLink {
 	hid_version: HidVersion,
 	_hid_manager: hid::Manager,
@@ -76,9 +92,9 @@ impl Link for HidLink {
 /// Derive the Trezor model from the HID device.
 fn derive_model(dev: &hid::Device) -> Option<Model> {
 	match (dev.vendor_id(), dev.product_id()) {
-		constants::hid::DEV_TREZOR1 => Some(Model::Trezor1),
-		constants::hid::DEV_TREZOR2 => Some(Model::Trezor2),
-		constants::hid::DEV_TREZOR2_BL => Some(Model::Trezor2Bl),
+		constants::DEV_TREZOR1 => Some(Model::Trezor1),
+		constants::DEV_TREZOR2 => Some(Model::Trezor2),
+		constants::DEV_TREZOR2_BL => Some(Model::Trezor2Bl),
 		_ => None,
 	}
 }
@@ -86,12 +102,12 @@ fn derive_model(dev: &hid::Device) -> Option<Model> {
 /// Derive from the HID device whether or not it is a debugable device or not.
 /// It returns None for not-recognized devices.
 fn derive_debug(dev: &hid::Device) -> Option<bool> {
-	if dev.usage_page() == constants::hid::DEBUGLINK_USAGE
-		|| dev.interface_number() == constants::hid::DEBUGLINK_INTERFACE
+	if dev.usage_page() == constants::DEBUGLINK_USAGE
+		|| dev.interface_number() == constants::DEBUGLINK_INTERFACE
 	{
 		Some(true)
-	} else if dev.usage_page() == constants::hid::WIRELINK_USAGE
-		|| dev.interface_number() == constants::hid::WIRELINK_INTERFACE
+	} else if dev.usage_page() == constants::WIRELINK_USAGE
+		|| dev.interface_number() == constants::WIRELINK_INTERFACE
 	{
 		Some(false)
 	} else {
@@ -115,11 +131,13 @@ fn probe_hid_version(handle: &mut hid::Handle) -> Result<HidVersion> {
 	Err(Error::UnknownHidVersion)
 }
 
+/// An implementation of the Transport interface for HID devices.
 pub struct HidTransport {
 	protocol: ProtocolV1<HidLink>,
 }
 
 impl HidTransport {
+	/// Find devices using the HID transport.
 	pub fn find_devices() -> Result<Vec<AvailableDevice>> {
 		let hidman = hid::init()?;
 		let mut found = Vec::new();
@@ -148,6 +166,7 @@ impl HidTransport {
 		Ok(found)
 	}
 
+	/// Connect to a device over the HID transport.
 	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::Hid(ref t) => t,

@@ -8,6 +8,8 @@ use protos::MessageType;
 pub mod hid;
 pub mod protocol;
 
+/// An available transport for a Trezor device, containing any of the different supported
+/// transports.
 #[derive(Debug)]
 pub enum AvailableDeviceTransport {
 	Hid(hid::AvailableHidTransport),
@@ -21,6 +23,8 @@ impl fmt::Display for AvailableDeviceTransport {
 	}
 }
 
+/// A protobuf message accompanied by the message type.  This type is used to pass messages over the
+/// transport and used to contain messages received from the transport.
 pub struct ProtoMessage(pub MessageType, pub Vec<u8>);
 
 impl ProtoMessage {
@@ -37,11 +41,14 @@ impl ProtoMessage {
 		self.1
 	}
 
+	/// Take the payload from the ProtoMessage and parse it to a protobuf message.
 	pub fn take_message<M: protobuf::Message>(self) -> Result<M> {
-		Ok(protobuf::parse_from_bytes(&self.payload())?)
+		Ok(protobuf::parse_from_bytes(&self.take_payload())?)
 	}
 }
 
+/// The transport interface that is implemented by the different ways to communicate with a Trezor
+/// device.
 pub trait Transport {
 	fn session_begin(&mut self) -> Result<()>;
 	fn session_end(&mut self) -> Result<()>;
@@ -50,6 +57,8 @@ pub trait Transport {
 	fn read_message(&mut self) -> Result<ProtoMessage>;
 }
 
+/// A delegation method to connect an available device transport.  It delegates to the different
+/// transport types.
 pub fn connect(available_device: &AvailableDevice) -> Result<Box<Transport>> {
 	match available_device.transport {
 		AvailableDeviceTransport::Hid(_) => hid::HidTransport::connect(&available_device),

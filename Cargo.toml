@@ -21,8 +21,8 @@ unicode-normalization = "0.1.7"
 
 [dev-dependencies]
 fern = "0.5.6"
-chrono = "0.4.6"
 
 [patch.crates-io]
+# For PSBT support.
 bitcoin = { path = "/home/steven/code/rust/bitcoin" }
 
