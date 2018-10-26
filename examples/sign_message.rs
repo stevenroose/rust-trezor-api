@@ -80,5 +80,5 @@ fn main() {
 			).unwrap(),
 	);
 	println!("Addr from device: {}", addr);
-	println!("Signature: {}", hex::encode(signature));
+	println!("Signature: {:?}", signature);
 }

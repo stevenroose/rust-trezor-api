@@ -6,6 +6,7 @@ use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
 use bitcoin::{Address, Transaction};
 use hex;
+use secp256k1;
 use unicode_normalization::UnicodeNormalization;
 
 use super::Model;
@@ -509,6 +510,25 @@ impl<'a> SignTxProgress<'a> {
 	}
 }
 
+/// Parse a Bitcoin Core-style 65-byte recoverable signature.
+//TODO(stevenroose) potentially replace this with native method if it gets merged:
+// https://github.com/rust-bitcoin/rust-secp256k1/pull/74
+fn parse_recoverable_signature(sig: &[u8]) -> Result<secp256k1::RecoverableSignature> {
+	if sig.len() != 65 {
+		return Err(secp256k1::Error::InvalidSignature.into());
+	}
+
+	// Bitcoin Core sets the first byte to `27 + rec + (fCompressed ? 4 : 0)`.
+	let rec_id = secp256k1::RecoveryId::from_i32(if sig[0] >= 31 {
+		(sig[0] - 31) as i32
+	} else {
+		(sig[0] - 27) as i32
+	})?;
+
+	let secp = secp256k1::Secp256k1::without_caps();
+	Ok(secp256k1::RecoverableSignature::from_compact(&secp, &sig[1..], rec_id)?)
+}
+
 /// A Trezor client.
 pub struct Trezor {
 	pub model: Model,
@@ -781,7 +801,8 @@ impl Trezor {
 		path: Vec<bip32::ChildNumber>,
 		script_type: InputScriptType,
 		network: Network,
-	) -> Result<TrezorResponse<(Address, Vec<u8>), protos::MessageSignature>> {
+	) -> Result<TrezorResponse<(Address, secp256k1::RecoverableSignature), protos::MessageSignature>>
+	{
 		let mut req = protos::SignMessage::new();
 		req.set_address_n(path.into_iter().map(Into::into).collect());
 		// Normalize to Unicode NFC.
@@ -793,8 +814,8 @@ impl Trezor {
 			req,
 			Box::new(|_, m| {
 				let address = m.get_address().parse()?;
-				let sig_bytes = m.get_signature().to_vec();
-				Ok((address, sig_bytes))
+				let signature = parse_recoverable_signature(m.get_signature())?;
+				Ok((address, signature))
 			}),
 		)
 	}
