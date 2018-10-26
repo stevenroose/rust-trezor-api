@@ -67,9 +67,9 @@ fn main() {
 					bip32::ChildNumber::from_hardened_idx(0),
 					bip32::ChildNumber::from_hardened_idx(1),
 				],
-				true,
 				trezor::protos::InputScriptType::SPENDADDRESS,
 				Network::Testnet,
+				true,
 			).unwrap(),
 	);
 	let addr = Address::p2pkh(&pubkey.public_key, Network::Testnet);

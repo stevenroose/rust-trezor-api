@@ -41,9 +41,9 @@ fn do_main() -> Result<(), trezor::Error> {
 			bip32::ChildNumber::from_hardened_idx(0),
 			bip32::ChildNumber::from_hardened_idx(0),
 		],
-		true,
 		trezor::protos::InputScriptType::SPENDADDRESS,
 		Network::Testnet,
+		true,
 	)?)?;
 	println!("{}", xpub);
 	println!("{:?}", xpub);

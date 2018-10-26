@@ -4,8 +4,7 @@ use bitcoin::network::constants::Network; //TODO(stevenroose) change after https
 use bitcoin::util::bip32;
 use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
-use bitcoin::Address;
-use bitcoin::Transaction;
+use bitcoin::{Address, Transaction};
 use hex;
 use unicode_normalization::UnicodeNormalization;
 
@@ -670,9 +669,9 @@ impl Trezor {
 	pub fn get_public_key(
 		&mut self,
 		path: Vec<bip32::ChildNumber>,
-		show_display: bool,
 		script_type: InputScriptType,
 		network: Network,
+		show_display: bool,
 	) -> Result<TrezorResponse<bip32::ExtendedPubKey, protos::PublicKey>> {
 		let mut req = protos::GetPublicKey::new();
 		req.set_address_n(path.into_iter().map(Into::into).collect());
@@ -680,6 +679,22 @@ impl Trezor {
 		req.set_coin_name(coin_name(network)?);
 		req.set_script_type(script_type);
 		self.call(req, Box::new(|_, m| Ok(m.get_xpub().parse()?)))
+	}
+
+	//TODO(stevenroose) multisig
+	pub fn get_address(
+		&mut self,
+		path: Vec<bip32::ChildNumber>,
+		script_type: InputScriptType,
+		network: Network,
+		show_display: bool,
+	) -> Result<TrezorResponse<Address, protos::Address>> {
+		let mut req = protos::GetAddress::new();
+		req.set_address_n(path.into_iter().map(Into::into).collect());
+		req.set_coin_name(coin_name(network)?);
+		req.set_show_display(show_display);
+		req.set_script_type(script_type);
+		self.call(req, Box::new(|_, m| Ok(m.get_address().parse()?)))
 	}
 
 	pub fn sign_tx(
