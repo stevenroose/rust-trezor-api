@@ -2,6 +2,7 @@ extern crate bitcoin;
 extern crate byteorder;
 extern crate hex;
 extern crate hid;
+extern crate unicode_normalization;
 #[macro_use]
 extern crate log;
 extern crate protobuf;

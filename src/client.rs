@@ -4,8 +4,10 @@ use bitcoin::network::constants::Network; //TODO(stevenroose) change after https
 use bitcoin::util::bip32;
 use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
+use bitcoin::Address;
 use bitcoin::Transaction;
 use hex;
+use unicode_normalization::UnicodeNormalization;
 
 use super::Model;
 use error::{Error, Result};
@@ -18,7 +20,7 @@ use transport::{ProtoMessage, Transport};
 use protos::ApplySettings_PassphraseSourceType as PassphraseSource;
 use protos::ButtonRequest_ButtonRequestType as ButtonRequestType;
 pub use protos::Features;
-use protos::InputScriptType;
+pub use protos::InputScriptType;
 use protos::PinMatrixRequest_PinMatrixRequestType as PinMatrixRequestType;
 use protos::TxAck_TransactionType_TxOutputType_OutputScriptType as OutputScriptType;
 use protos::TxRequest_RequestType as TxRequestType;
@@ -699,6 +701,30 @@ impl Trezor {
 					req: m,
 					client: c,
 				})
+			}),
+		)
+	}
+
+	pub fn sign_message(
+		&mut self,
+		message: String,
+		path: Vec<bip32::ChildNumber>,
+		script_type: InputScriptType,
+		network: Network,
+	) -> Result<TrezorResponse<(Address, Vec<u8>), protos::MessageSignature>> {
+		let mut req = protos::SignMessage::new();
+		req.set_address_n(path.into_iter().map(Into::into).collect());
+		// Normalize to Unicode NFC.
+		let msg_bytes = message.nfc().collect::<String>().into_bytes();
+		req.set_message(msg_bytes);
+		req.set_coin_name(coin_name(network)?);
+		req.set_script_type(script_type);
+		self.call(
+			req,
+			Box::new(|_, m| {
+				let address = m.get_address().parse()?;
+				let sig_bytes = m.get_signature().to_vec();
+				Ok((address, sig_bytes))
 			}),
 		)
 	}

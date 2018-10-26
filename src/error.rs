@@ -9,6 +9,7 @@ use bitcoin::util::base58;
 use bitcoin::util::hash::Sha256dHash;
 use hid;
 use protobuf::error::ProtobufError;
+use secp256k1;
 
 use client::InteractionType;
 use protos;
@@ -60,6 +61,8 @@ pub enum Error {
 	InvalidPsbt(String),
 	/// Error encoding/decoding a Bitcoin data structure.
 	BitcoinEncode(bitcoin::consensus::encode::Error),
+	/// Elliptic curve crypto error.
+	Secp256k1(secp256k1::Error),
 }
 
 impl From<hid::Error> for Error {
@@ -83,6 +86,12 @@ impl From<base58::Error> for Error {
 impl From<bitcoin::consensus::encode::Error> for Error {
 	fn from(e: bitcoin::consensus::encode::Error) -> Error {
 		Error::BitcoinEncode(e)
+	}
+}
+
+impl From<secp256k1::Error> for Error {
+	fn from(e: secp256k1::Error) -> Error {
+		Error::Secp256k1(e)
 	}
 }
 
@@ -129,6 +138,7 @@ impl error::Error for Error {
 			Error::MalformedTxRequest(_) => "device produced invalid TxRequest message",
 			Error::InvalidPsbt(_) => "user provided invalid PSBT",
 			Error::BitcoinEncode(_) => "error encoding/decoding a Bitcoin data structure",
+			Error::Secp256k1(_) => "elliptic curve crypto error",
 		}
 	}
 }
@@ -165,6 +175,7 @@ impl fmt::Display for Error {
 			Error::MalformedTxRequest(ref m) => write!(f, "malformed TxRequest: {:?}", m),
 			Error::InvalidPsbt(ref m) => write!(f, "invalid PSBT: {}", m),
 			Error::BitcoinEncode(ref e) => write!(f, "bitcoin encoding error: {}", e),
+			Error::Secp256k1(ref e) => write!(f, "ECDSA signature error: {}", e),
 			_ => f.write_str(error::Error::description(self)),
 		}
 	}
