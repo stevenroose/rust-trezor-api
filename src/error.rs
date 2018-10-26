@@ -49,6 +49,8 @@ pub enum Error {
 	Base58(base58::Error),
 	/// The given Bitcoin network is not supported.
 	UnsupportedNetwork,
+	/// Provided entropy is not 32 bytes.
+	InvalidEntropy,
 	/// The device referenced a non-existing input or output index.
 	TxRequestInvalidIndex(usize),
 	/// The device referenced an unknown TXID.
@@ -130,6 +132,7 @@ impl error::Error for Error {
 			}
 			Error::Base58(ref e) => error::Error::description(e),
 			Error::UnsupportedNetwork => "given network is not supported",
+			Error::InvalidEntropy = "provided entropy is not 32 bytes",
 			Error::TxRequestInvalidIndex(_) => {
 				"the device referenced a non-existing input or output index"
 			}

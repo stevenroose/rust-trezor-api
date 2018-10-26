@@ -201,6 +201,25 @@ impl<'a, T, R: TrezorMessage> TrezorResponse<'a, T, R> {
 	}
 }
 
+/// When resetting the device, it will ask for entropy to aid key generation.
+pub struct EntropyRequest<'a> {
+	client: &'a mut Trezor,
+	req: protos::EntropyRequest,
+}
+
+impl<'a> EntropyRequest<'a> {
+	/// Provide exactly 32 bytes or entropy.
+	pub fn ack_entropy(self, entropy: Vec<u8>) -> Result<TrezorResponse<'a, (), protos::Success>> {
+		if entropy.len() != 32 {
+			return Err(Error::InvalidEntropy);
+		}
+
+		let req = protos::EntropyAck::new();
+		req.set_entropy(entropy);
+		self.client.call(req, Box::new(|_, _| Ok(())))
+	}
+}
+
 /// Find the (first if multiple) PSBT input that refers to the given txid.
 fn psbt_find_input(
 	psbt: &psbt::PartiallySignedTransaction,
@@ -620,7 +639,7 @@ impl Trezor {
 		label: String,
 		skip_backup: bool,
 		no_backup: bool,
-	) -> Result<TrezorResponse<(), protos::Success>> {
+	) -> Result<TrezorResponse<EntropyRequest, protos::EntropyRequest>> {
 		let mut req = protos::ResetDevice::new();
 		req.set_display_random(display_random);
 		req.set_strength(strength as u32);
@@ -629,7 +648,15 @@ impl Trezor {
 		req.set_label(label);
 		req.set_skip_backup(skip_backup);
 		req.set_no_backup(no_backup);
-		self.call(req, Box::new(|_, _| Ok(())))
+		self.call(
+			req,
+			Box::new(|c, m| {
+				Ok(EntropyRequest {
+					client: c,
+					req: m,
+				})
+			}),
+		)
 	}
 
 	pub fn backup(&mut self) -> Result<TrezorResponse<(), protos::Success>> {
