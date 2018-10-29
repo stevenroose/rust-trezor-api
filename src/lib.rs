@@ -78,14 +78,14 @@ impl fmt::Display for AvailableDevice {
 impl AvailableDevice {
 	/// Connect to the device.
 	pub fn connect(self) -> Result<Trezor> {
-		let transport = transport::connect(&self)?;
+		let transport = transport::connect(&self).map_err(|e| Error::TransportConnect(e))?;
 		Ok(client::trezor_with_transport(self.model, transport))
 	}
 }
 
 /// Search for all available devices.
 pub fn find_devices() -> Result<Vec<AvailableDevice>> {
-	transport::hid::HidTransport::find_devices()
+	transport::hid::HidTransport::find_devices().map_err(|e| Error::TransportConnect(e))
 }
 
 /// Try to get a single device.  Optionally specify whether debug should be enabled or not.

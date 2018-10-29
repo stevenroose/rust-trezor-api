@@ -2,9 +2,9 @@ use fmt;
 use protobuf;
 
 use super::AvailableDevice;
-use error::Result;
 use protos::MessageType;
 
+pub mod error;
 pub mod hid;
 pub mod protocol;
 
@@ -42,7 +42,7 @@ impl ProtoMessage {
 	}
 
 	/// Take the payload from the ProtoMessage and parse it to a protobuf message.
-	pub fn take_message<M: protobuf::Message>(self) -> Result<M> {
+	pub fn take_message<M: protobuf::Message>(self) -> Result<M, protobuf::error::ProtobufError> {
 		Ok(protobuf::parse_from_bytes(&self.take_payload())?)
 	}
 }
@@ -50,16 +50,16 @@ impl ProtoMessage {
 /// The transport interface that is implemented by the different ways to communicate with a Trezor
 /// device.
 pub trait Transport {
-	fn session_begin(&mut self) -> Result<()>;
-	fn session_end(&mut self) -> Result<()>;
+	fn session_begin(&mut self) -> Result<(), error::Error>;
+	fn session_end(&mut self) -> Result<(), error::Error>;
 
-	fn write_message(&mut self, message: ProtoMessage) -> Result<()>;
-	fn read_message(&mut self) -> Result<ProtoMessage>;
+	fn write_message(&mut self, message: ProtoMessage) -> Result<(), error::Error>;
+	fn read_message(&mut self) -> Result<ProtoMessage, error::Error>;
 }
 
 /// A delegation method to connect an available device transport.  It delegates to the different
 /// transport types.
-pub fn connect(available_device: &AvailableDevice) -> Result<Box<Transport>> {
+pub fn connect(available_device: &AvailableDevice) -> Result<Box<Transport>, error::Error> {
 	match available_device.transport {
 		AvailableDeviceTransport::Hid(_) => hid::HidTransport::connect(&available_device),
 	}

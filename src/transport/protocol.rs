@@ -3,23 +3,23 @@ use std::cmp;
 use byteorder::{BigEndian, ByteOrder};
 use protobuf::ProtobufEnum;
 
-use error::{Error, Result};
 use protos::MessageType;
+use transport::error::Error;
 use transport::ProtoMessage;
 
 /// A link represents a serial connection to send and receive byte chunks from and to a device.
 pub trait Link {
-	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<()>;
-	fn read_chunk(&mut self) -> Result<Vec<u8>>;
+	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<(), Error>;
+	fn read_chunk(&mut self) -> Result<Vec<u8>, Error>;
 }
 
 /// A protocol is used to encode messages in chunks that can be sent to the device and to parse
 /// chunks into messages.
 pub trait Protocol {
-	fn session_begin(&mut self) -> Result<()>;
-	fn session_end(&mut self) -> Result<()>;
-	fn write(&mut self, message: ProtoMessage) -> Result<()>;
-	fn read(&mut self) -> Result<ProtoMessage>;
+	fn session_begin(&mut self) -> Result<(), Error>;
+	fn session_end(&mut self) -> Result<(), Error>;
+	fn write(&mut self, message: ProtoMessage) -> Result<(), Error>;
+	fn read(&mut self) -> Result<ProtoMessage, Error>;
 }
 
 /// The length of the chunks sent.
@@ -34,7 +34,7 @@ pub struct ProtocolV2<L: Link> {
 }
 
 impl<L: Link> Protocol for ProtocolV2<L> {
-	fn session_begin(&mut self) -> Result<()> {
+	fn session_begin(&mut self) -> Result<(), Error> {
 		let mut chunk = vec![0; REPLEN];
 		chunk[0] = 0x03;
 		self.link.write_chunk(chunk)?;
@@ -46,7 +46,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		Ok(())
 	}
 
-	fn session_end(&mut self) -> Result<()> {
+	fn session_end(&mut self) -> Result<(), Error> {
 		assert!(self.session_id != 0);
 		let mut chunk = vec![0; REPLEN];
 		chunk[0] = 0x04;
@@ -60,7 +60,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		Ok(())
 	}
 
-	fn write(&mut self, message: ProtoMessage) -> Result<()> {
+	fn write(&mut self, message: ProtoMessage) -> Result<(), Error> {
 		assert!(self.session_id != 0);
 
 		// First generate the total payload, then write it to the transport in chunks.
@@ -100,7 +100,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		Ok(())
 	}
 
-	fn read(&mut self) -> Result<ProtoMessage> {
+	fn read(&mut self) -> Result<ProtoMessage, Error> {
 		assert!(self.session_id != 0);
 
 		let chunk = self.link.read_chunk()?;
@@ -143,15 +143,15 @@ pub struct ProtocolV1<L: Link> {
 }
 
 impl<L: Link> Protocol for ProtocolV1<L> {
-	fn session_begin(&mut self) -> Result<()> {
+	fn session_begin(&mut self) -> Result<(), Error> {
 		Ok(()) // no sessions
 	}
 
-	fn session_end(&mut self) -> Result<()> {
+	fn session_end(&mut self) -> Result<(), Error> {
 		Ok(()) // no sessions
 	}
 
-	fn write(&mut self, message: ProtoMessage) -> Result<()> {
+	fn write(&mut self, message: ProtoMessage) -> Result<(), Error> {
 		// First generate the total payload, then write it to the transport in chunks.
 		let mut data = vec![0; 8];
 		data[0] = 0x23;
@@ -175,7 +175,7 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 		Ok(())
 	}
 
-	fn read(&mut self) -> Result<ProtoMessage> {
+	fn read(&mut self) -> Result<ProtoMessage, Error> {
 		let chunk = self.link.read_chunk()?;
 		if chunk[0] != 0x3f || chunk[1] != 0x23 || chunk[2] != 0x23 {
 			return Err(Error::DeviceBadMagic);

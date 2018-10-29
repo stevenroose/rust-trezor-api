@@ -7,36 +7,30 @@ use std::result;
 use bitcoin;
 use bitcoin::util::base58;
 use bitcoin::util::hash::Sha256dHash;
-use hid;
 use protobuf::error::ProtobufError;
 use secp256k1;
 
 use client::InteractionType;
 use protos;
+use transport;
 
 /// Trezor error.
 #[derive(Debug)]
 pub enum Error {
-	/// Error from hidapi.
-	Hid(hid::Error),
 	/// Less than one device was plugged in.
 	NoDeviceFound,
 	/// More than one device was plugged in.
 	DeviceNotUnique,
-	/// The HID version supported by the device was unknown.
-	UnknownHidVersion,
-	/// The device produced a data chunk of unexpected size.
-	UnexpectedChunkSizeFromDevice(usize),
-	/// Timeout expired while reading from device.
-	DeviceReadTimeout,
-	/// The device sent a chunk with a wrong magic value.
-	DeviceBadMagic,
-	/// The device sent a message with a wrong session id.
-	DeviceBadSessionId,
-	/// The device sent an unexpected sequence number.
-	DeviceUnexpectedSequenceNumber,
-	/// Received a non-existing message type from the device.
-	InvalidMessageType(u32),
+	/// Transport error connecting to device.
+	TransportConnect(transport::error::Error),
+	/// Transport error while beginning a session.
+	TransportBeginSession(transport::error::Error),
+	/// Transport error while ending a session.
+	TransportEndSession(transport::error::Error),
+	/// Transport error while sending a message.
+	TransportSendMessage(transport::error::Error),
+	/// Transport error while receiving a message.
+	TransportReceiveMessage(transport::error::Error),
 	/// Received an unexpected message type from the device.
 	UnexpectedMessageType(protos::MessageType), //TODO(stevenroose) type alias
 	/// Error reading or writing protobuf messages.
@@ -67,12 +61,6 @@ pub enum Error {
 	Secp256k1(secp256k1::Error),
 }
 
-impl From<hid::Error> for Error {
-	fn from(e: hid::Error) -> Error {
-		Error::Hid(e)
-	}
-}
-
 impl From<ProtobufError> for Error {
 	fn from(e: ProtobufError) -> Error {
 		Error::Protobuf(e)
@@ -100,7 +88,11 @@ impl From<secp256k1::Error> for Error {
 impl error::Error for Error {
 	fn cause(&self) -> Option<&error::Error> {
 		match *self {
-			Error::Hid(ref e) => Some(e),
+			Error::TransportConnect(ref e) => Some(e),
+			Error::TransportBeginSession(ref e) => Some(e),
+			Error::TransportEndSession(ref e) => Some(e),
+			Error::TransportSendMessage(ref e) => Some(e),
+			Error::TransportReceiveMessage(ref e) => Some(e),
 			Error::Base58(ref e) => Some(e),
 			_ => None,
 		}
@@ -108,20 +100,13 @@ impl error::Error for Error {
 
 	fn description(&self) -> &str {
 		match *self {
-			Error::Hid(ref e) => error::Error::description(e),
 			Error::NoDeviceFound => "Trezor device not found",
 			Error::DeviceNotUnique => "multiple Trezor devices found",
-			Error::UnknownHidVersion => "HID version of the device unknown",
-			Error::UnexpectedChunkSizeFromDevice(_) => {
-				"the device produced a data chunk of unexpected size"
-			}
-			Error::DeviceReadTimeout => "timeout expired while reading from device",
-			Error::DeviceBadMagic => "the device sent chunk with wrong magic value",
-			Error::DeviceBadSessionId => "the device sent a message with a wrong session id",
-			Error::DeviceUnexpectedSequenceNumber => {
-				"the device sent an unexpected sequence number"
-			}
-			Error::InvalidMessageType(_) => "received a non-existing message type from the device",
+			Error::TransportConnect(_) => "transport error connecting to device",
+			Error::TransportBeginSession(_) => "transport error while beginning a session",
+			Error::TransportEndSession(_) => "transport error while ending a session",
+			Error::TransportSendMessage(_) => "transport error while sending a message",
+			Error::TransportReceiveMessage(_) => "transport error while receiving a message",
 			Error::UnexpectedMessageType(_) => {
 				"received an unexpected message type from the device"
 			}
@@ -149,11 +134,13 @@ impl error::Error for Error {
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
-			Error::Hid(ref e) => fmt::Display::fmt(e, f),
-			Error::UnexpectedChunkSizeFromDevice(s) => {
-				write!(f, "device produced chunk of size {}", s)
+			Error::TransportConnect(ref e) => write!(f, "transport connect: {}", e),
+			Error::TransportBeginSession(ref e) => write!(f, "transport beginning session: {}", e),
+			Error::TransportEndSession(ref e) => write!(f, "transport ending session: {}", e),
+			Error::TransportSendMessage(ref e) => write!(f, "transport sending message: {}", e),
+			Error::TransportReceiveMessage(ref e) => {
+				write!(f, "transport receiving message: {}", e)
 			}
-			Error::InvalidMessageType(ref t) => write!(f, "received invalid message type: {}", t),
 			Error::UnexpectedMessageType(ref t) => {
 				write!(f, "received unexpected message type: {:?}", t)
 			}

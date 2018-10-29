@@ -4,7 +4,7 @@ use std::time::Duration;
 use hid;
 
 use super::super::{AvailableDevice, Model};
-use error::{Error, Result};
+use transport::error::Error;
 use transport::protocol::{Link, Protocol, ProtocolV1};
 use transport::{AvailableDeviceTransport, ProtoMessage, Transport};
 
@@ -58,7 +58,7 @@ impl Drop for HidLink {
 }
 
 impl Link for HidLink {
-	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<()> {
+	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<(), Error> {
 		assert_eq!(CHUNK_SIZE, chunk.len());
 		let payload = match self.hid_version {
 			HidVersion::V1 => chunk,
@@ -72,7 +72,7 @@ impl Link for HidLink {
 		Ok(())
 	}
 
-	fn read_chunk(&mut self) -> Result<Vec<u8>> {
+	fn read_chunk(&mut self) -> Result<Vec<u8>, Error> {
 		let mut chunk = vec![0; 64];
 		//TODO(stevenroose) have different timeouts for messages that do user input
 		match self
@@ -116,7 +116,7 @@ fn derive_debug(dev: &hid::Device) -> Option<bool> {
 }
 
 /// Probe the HID version for a Trezor 1 device.
-fn probe_hid_version(handle: &mut hid::Handle) -> Result<HidVersion> {
+fn probe_hid_version(handle: &mut hid::Handle) -> Result<HidVersion, Error> {
 	let mut w = vec![0xff; 65];
 	w[0] = 0;
 	w[1] = 63;
@@ -138,7 +138,7 @@ pub struct HidTransport {
 
 impl HidTransport {
 	/// Find devices using the HID transport.
-	pub fn find_devices() -> Result<Vec<AvailableDevice>> {
+	pub fn find_devices() -> Result<Vec<AvailableDevice>, Error> {
 		let hidman = hid::init()?;
 		let mut found = Vec::new();
 		for dev in hidman.devices() {
@@ -167,7 +167,7 @@ impl HidTransport {
 	}
 
 	/// Connect to a device over the HID transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::Hid(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in HidTransport::connect"),
@@ -188,7 +188,7 @@ impl HidTransport {
 		}
 
 		match found {
-			None => Err(Error::NoDeviceFound),
+			None => Err(Error::DeviceNotFound),
 			Some(mut handle) => {
 				let hid_version = probe_hid_version(&mut handle)?;
 				Ok(Box::new(HidTransport {
@@ -206,17 +206,17 @@ impl HidTransport {
 }
 
 impl super::Transport for HidTransport {
-	fn session_begin(&mut self) -> Result<()> {
+	fn session_begin(&mut self) -> Result<(), Error> {
 		self.protocol.session_begin()
 	}
-	fn session_end(&mut self) -> Result<()> {
+	fn session_end(&mut self) -> Result<(), Error> {
 		self.protocol.session_end()
 	}
 
-	fn write_message(&mut self, message: ProtoMessage) -> Result<()> {
+	fn write_message(&mut self, message: ProtoMessage) -> Result<(), Error> {
 		self.protocol.write(message)
 	}
-	fn read_message(&mut self) -> Result<ProtoMessage> {
+	fn read_message(&mut self) -> Result<ProtoMessage, Error> {
 		self.protocol.read()
 	}
 }

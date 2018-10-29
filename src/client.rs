@@ -522,8 +522,9 @@ impl Trezor {
 	/// This method is only exported for users that want to expand the features of this library
 	/// f.e. for supporting additional coins etc.
 	pub fn call_raw<S: TrezorMessage>(&mut self, message: S) -> Result<ProtoMessage> {
-		self.transport.write_message(ProtoMessage(S::message_type(), message.write_to_bytes()?))?;
-		self.transport.read_message()
+		let proto_msg = ProtoMessage(S::message_type(), message.write_to_bytes()?);
+		self.transport.write_message(proto_msg).map_err(|e| Error::TransportSendMessage(e))?;
+		self.transport.read_message().map_err(|e| Error::TransportReceiveMessage(e))
 	}
 
 	/// Sends a message and returns a TrezorResponse with either the expected response message,
