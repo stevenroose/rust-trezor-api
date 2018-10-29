@@ -15,6 +15,7 @@ use messages::TrezorMessage;
 use protos;
 use protos::MessageType::*;
 use transport::{ProtoMessage, Transport};
+use utils;
 
 // Some types with raw protos that we use in the public interface so they have to be exported.
 use protos::ApplySettings_PassphraseSourceType as PassphraseSource;
@@ -242,17 +243,6 @@ impl<'a> EntropyRequest<'a> {
 	}
 }
 
-/// Find the (first if multiple) PSBT input that refers to the given txid.
-fn psbt_find_input(
-	psbt: &psbt::PartiallySignedTransaction,
-	txid: Sha256dHash,
-) -> Result<&psbt::Input> {
-	let inputs = &psbt.global.unsigned_tx.input;
-	let opt = inputs.iter().enumerate().find(|i| i.1.previous_output.txid == txid);
-	let idx = opt.ok_or(Error::TxRequestUnknownTxid(txid))?.0;
-	psbt.inputs.get(idx).ok_or(Error::TxRequestInvalidIndex(idx))
-}
-
 /// Fulfill a TxRequest for TXINPUT.
 fn ack_input_request(
 	req: &protos::TxRequest,
@@ -265,9 +255,9 @@ fn ack_input_request(
 	// Choose either the tx we are signing or a dependent tx.
 	let input_index = req.get_details().get_request_index() as usize;
 	let input = if req.get_details().has_tx_hash() {
-		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
 		trace!("Preparing ack for input {}:{}", req_hash, input_index);
-		let inp = psbt_find_input(&psbt, req_hash)?;
+		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let tx = inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?;
 		let opt = &tx.input.get(input_index);
 		opt.ok_or(Error::TxRequestInvalidIndex(input_index))?
@@ -278,7 +268,7 @@ fn ack_input_request(
 	};
 
 	let mut data_input = protos::TxAck_TransactionType_TxInputType::new();
-	data_input.set_prev_hash(input.previous_output.txid.to_bytes().to_vec());
+	data_input.set_prev_hash(utils::to_rev_bytes(&input.previous_output.txid).to_vec());
 	data_input.set_prev_index(input.previous_output.vout);
 	data_input.set_script_sig(input.script_sig.to_bytes());
 	data_input.set_sequence(input.sequence);
@@ -338,9 +328,9 @@ fn ack_output_request(
 	if req.get_details().has_tx_hash() {
 		// Dependent tx, take the output from the PSBT and just create bin_output.
 		let output_index = req.get_details().get_request_index() as usize;
-		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
 		trace!("Preparing ack for output {}:{}", req_hash, output_index);
-		let inp = psbt_find_input(&psbt, req_hash)?;
+		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let output = if let Some(ref tx) = inp.non_witness_utxo {
 			let opt = &tx.output.get(output_index);
 			opt.ok_or(Error::TxRequestInvalidIndex(output_index))?
@@ -418,9 +408,9 @@ fn ack_meta_request(
 	// Choose either the tx we are signing or a dependent tx.
 	let tx: &Transaction = if req.get_details().has_tx_hash() {
 		// dependeny tx, look for it in PSBT inputs
-		let req_hash: Sha256dHash = req.get_details().get_tx_hash().into();
+		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
 		trace!("Preparing ack for tx meta of {}", req_hash);
-		let inp = psbt_find_input(&psbt, req_hash)?;
+		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?
 	} else {
 		// currently signing tx
@@ -510,40 +500,12 @@ impl<'a> SignTxProgress<'a> {
 	}
 }
 
-/// Parse a Bitcoin Core-style 65-byte recoverable signature.
-//TODO(stevenroose) potentially replace this with native method if it gets merged:
-// https://github.com/rust-bitcoin/rust-secp256k1/pull/74
-fn parse_recoverable_signature(sig: &[u8]) -> Result<secp256k1::RecoverableSignature> {
-	if sig.len() != 65 {
-		return Err(secp256k1::Error::InvalidSignature.into());
-	}
-
-	// Bitcoin Core sets the first byte to `27 + rec + (fCompressed ? 4 : 0)`.
-	let rec_id = secp256k1::RecoveryId::from_i32(if sig[0] >= 31 {
-		(sig[0] - 31) as i32
-	} else {
-		(sig[0] - 27) as i32
-	})?;
-
-	let secp = secp256k1::Secp256k1::without_caps();
-	Ok(secp256k1::RecoverableSignature::from_compact(&secp, &sig[1..], rec_id)?)
-}
-
 /// A Trezor client.
 pub struct Trezor {
 	pub model: Model,
 	// Cached features for later inspection.
 	pub features: Option<protos::Features>,
 	transport: Box<Transport>,
-}
-
-/// Convert a bitcoin network constant to the Trezor-compatible coin_name string.
-fn coin_name(network: Network) -> Result<String> {
-	match network {
-		Network::Bitcoin => Ok("Bitcoin".to_owned()),
-		Network::Testnet => Ok("Testnet".to_owned()),
-		_ => Err(Error::UnsupportedNetwork),
-	}
 }
 
 /// Create a new Trezor instance with the given transport.
@@ -751,7 +713,7 @@ impl Trezor {
 		let mut req = protos::GetPublicKey::new();
 		req.set_address_n(path.into_iter().map(Into::into).collect());
 		req.set_show_display(show_display);
-		req.set_coin_name(coin_name(network)?);
+		req.set_coin_name(utils::coin_name(network)?);
 		req.set_script_type(script_type);
 		self.call(req, Box::new(|_, m| Ok(m.get_xpub().parse()?)))
 	}
@@ -766,7 +728,7 @@ impl Trezor {
 	) -> Result<TrezorResponse<Address, protos::Address>> {
 		let mut req = protos::GetAddress::new();
 		req.set_address_n(path.into_iter().map(Into::into).collect());
-		req.set_coin_name(coin_name(network)?);
+		req.set_coin_name(utils::coin_name(network)?);
 		req.set_show_display(show_display);
 		req.set_script_type(script_type);
 		self.call(req, Box::new(|_, m| Ok(m.get_address().parse()?)))
@@ -781,7 +743,7 @@ impl Trezor {
 		let mut req = protos::SignTx::new();
 		req.set_inputs_count(tx.input.len() as u32);
 		req.set_outputs_count(tx.output.len() as u32);
-		req.set_coin_name(coin_name(network)?);
+		req.set_coin_name(utils::coin_name(network)?);
 		req.set_version(tx.version);
 		req.set_lock_time(tx.lock_time);
 		self.call(
@@ -808,13 +770,13 @@ impl Trezor {
 		// Normalize to Unicode NFC.
 		let msg_bytes = message.nfc().collect::<String>().into_bytes();
 		req.set_message(msg_bytes);
-		req.set_coin_name(coin_name(network)?);
+		req.set_coin_name(utils::coin_name(network)?);
 		req.set_script_type(script_type);
 		self.call(
 			req,
 			Box::new(|_, m| {
 				let address = m.get_address().parse()?;
-				let signature = parse_recoverable_signature(m.get_signature())?;
+				let signature = utils::parse_recoverable_signature(m.get_signature())?;
 				Ok((address, signature))
 			}),
 		)

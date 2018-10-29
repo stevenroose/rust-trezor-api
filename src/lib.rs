@@ -11,6 +11,7 @@ extern crate secp256k1;
 mod error;
 mod messages;
 mod transport;
+mod utils;
 
 // Public to allow custom use of the `Trezor::call` method for unsupported currencies etc.
 pub mod client;
