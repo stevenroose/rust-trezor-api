@@ -470,26 +470,18 @@ impl<'a> SignTxProgress<'a> {
 		Ok(self.req.has_request_type() && self.req.get_request_type() == TxRequestType::TXFINISHED)
 	}
 
-	/// Provide additional PSBT information to the device.
+	/// Manually provide a TxAck message to the device.
+	///
 	/// This method will panic if `apply()` returned true,
 	/// so it should always be checked in advance.
-	pub fn ack_psbt(
+	pub fn ack_msg(
 		self,
-		psbt: &psbt::PartiallySignedTransaction,
+		ack: protos::TxAck,
 	) -> Result<TrezorResponse<'a, SignTxProgress<'a>, protos::TxRequest>> {
-		if !self.req.has_request_type() {
-			return Err(Error::MalformedTxRequest(self.req.clone()));
-		}
 		assert!(self.req.get_request_type() != TxRequestType::TXFINISHED);
 
 		self.client.call(
-			match self.req.get_request_type() {
-				TxRequestType::TXINPUT => ack_input_request(&self.req, &psbt),
-				TxRequestType::TXOUTPUT => ack_output_request(&self.req, &psbt),
-				TxRequestType::TXMETA => ack_meta_request(&self.req, &psbt),
-				TxRequestType::TXEXTRADATA => unimplemented!(), //TODO(stevenroose) implement
-				TxRequestType::TXFINISHED => unreachable!(),
-			}?,
+			ack,
 			Box::new(|c, m| {
 				Ok(SignTxProgress {
 					req: m,
@@ -497,6 +489,26 @@ impl<'a> SignTxProgress<'a> {
 				})
 			}),
 		)
+	}
+
+	/// Provide additional PSBT information to the device.
+	///
+	/// This method will panic if `apply()` returned true,
+	/// so it should always be checked in advance.
+	pub fn ack_psbt(
+		self,
+		psbt: &psbt::PartiallySignedTransaction,
+	) -> Result<TrezorResponse<'a, SignTxProgress<'a>, protos::TxRequest>> {
+		assert!(self.req.get_request_type() != TxRequestType::TXFINISHED);
+
+		let ack = match self.req.get_request_type() {
+			TxRequestType::TXINPUT => ack_input_request(&self.req, &psbt),
+			TxRequestType::TXOUTPUT => ack_output_request(&self.req, &psbt),
+			TxRequestType::TXMETA => ack_meta_request(&self.req, &psbt),
+			TxRequestType::TXEXTRADATA => unimplemented!(), //TODO(stevenroose) implement
+			TxRequestType::TXFINISHED => unreachable!(),
+		}?;
+		self.ack_msg(ack)
 	}
 }
 

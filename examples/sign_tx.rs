@@ -112,14 +112,7 @@ fn main() {
 		}],
 		outputs: vec![
 			psbt::Output {
-				hd_keypaths: HashMap::from_iter(vec![
-												(pubkey.public_key.clone(), (pubkey.fingerprint(), 		vec![
-			bip32::ChildNumber::from_hardened_idx(0),
-			bip32::ChildNumber::from_hardened_idx(0),
-			bip32::ChildNumber::from_hardened_idx(1),
-		])),
-				].into_iter()),
-			..Default::default()
+				..Default::default()
 			},
 		],
 	};
