@@ -54,7 +54,7 @@ fn tx_progress(
 	progress: SignTxProgress,
 ) -> Result<(), Error> {
 	if !progress.apply(psbt).unwrap() {
-		let progress = handle_interaction(progress.ack_psbt(&psbt).unwrap());
+		let progress = handle_interaction(progress.ack_psbt(&psbt, Network::Testnet).unwrap());
 		tx_progress(psbt, progress)
 	} else {
 		Ok(())

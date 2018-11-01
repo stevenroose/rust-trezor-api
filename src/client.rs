@@ -317,6 +317,7 @@ fn ack_input_request(
 fn ack_output_request(
 	req: &protos::TxRequest,
 	psbt: &psbt::PartiallySignedTransaction,
+	network: Network,
 ) -> Result<protos::TxAck> {
 	if !req.has_details() || !req.get_details().has_request_index() {
 		return Err(Error::MalformedTxRequest(req.clone()));
@@ -357,6 +358,9 @@ fn ack_output_request(
 		data_output.set_amount(output.value);
 		// Set script type to PAYTOADDRESS unless we find out otherwise from the PSBT.
 		data_output.set_script_type(OutputScriptType::PAYTOADDRESS);
+		if let Some(addr) = utils::address_from_script(&output.script_pubkey, network) {
+			data_output.set_address(addr.to_string());
+		}
 
 		let psbt_output = psbt
 			.outputs
@@ -498,12 +502,13 @@ impl<'a> SignTxProgress<'a> {
 	pub fn ack_psbt(
 		self,
 		psbt: &psbt::PartiallySignedTransaction,
+		network: Network,
 	) -> Result<TrezorResponse<'a, SignTxProgress<'a>, protos::TxRequest>> {
 		assert!(self.req.get_request_type() != TxRequestType::TXFINISHED);
 
 		let ack = match self.req.get_request_type() {
 			TxRequestType::TXINPUT => ack_input_request(&self.req, &psbt),
-			TxRequestType::TXOUTPUT => ack_output_request(&self.req, &psbt),
+			TxRequestType::TXOUTPUT => ack_output_request(&self.req, &psbt, network),
 			TxRequestType::TXMETA => ack_meta_request(&self.req, &psbt),
 			TxRequestType::TXEXTRADATA => unimplemented!(), //TODO(stevenroose) implement
 			TxRequestType::TXFINISHED => unreachable!(),

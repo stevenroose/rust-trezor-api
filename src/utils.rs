@@ -1,9 +1,56 @@
+use bitcoin::blockdata::script::Script;
 use bitcoin::network::constants::Network; //TODO(stevenroose) change after https://github.com/rust-bitcoin/rust-bitcoin/pull/181
+use bitcoin::util::address;
 use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
+use bitcoin_bech32::{u5, WitnessProgram};
 use secp256k1;
 
 use error::{Error, Result};
+
+/// convert Network to bech32 network (this should go away soon)
+fn bech_network(network: Network) -> bitcoin_bech32::constants::Network {
+	match network {
+		Network::Bitcoin => bitcoin_bech32::constants::Network::Bitcoin,
+		Network::Testnet => bitcoin_bech32::constants::Network::Testnet,
+		Network::Regtest => bitcoin_bech32::constants::Network::Regtest,
+	}
+}
+
+/// Retrieve an address from the given script.
+pub fn address_from_script(script: &Script, network: Network) -> Option<address::Address> {
+	Some(address::Address {
+		payload: if script.is_p2sh() {
+			address::Payload::ScriptHash(script.as_bytes()[2..22].into())
+		} else if script.is_p2pkh() {
+			address::Payload::PubkeyHash(script.as_bytes()[3..23].into())
+		} else if script.is_p2pk() {
+			let secp = secp256k1::Secp256k1::without_caps();
+			let pubkey =
+				secp256k1::key::PublicKey::from_slice(&secp, &script.as_bytes()[1..66]).unwrap();
+			address::Payload::Pubkey(pubkey)
+		} else if script.is_v0_p2wsh() {
+			address::Payload::WitnessProgram(
+				WitnessProgram::new(
+					u5::try_from_u8(0).expect("0<32"),
+					script.as_bytes()[2..34].to_vec(),
+					bech_network(network),
+				).unwrap(),
+			)
+		} else if script.is_v0_p2wpkh() {
+			address::Payload::WitnessProgram(
+				WitnessProgram::new(
+					u5::try_from_u8(0).expect("0<32"),
+					script.as_bytes()[2..22].to_vec(),
+					bech_network(network),
+				).unwrap(),
+			)
+		} else {
+			return None;
+		},
+		network: network,
+	})
+}
 
 /// Find the (first if multiple) PSBT input that refers to the given txid.
 pub fn psbt_find_input(
