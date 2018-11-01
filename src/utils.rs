@@ -31,11 +31,11 @@ pub fn to_rev_bytes(hash: &Sha256dHash) -> [u8; 32] {
 }
 
 /// Parse a Bitcoin Core-style 65-byte recoverable signature.
-//TODO(stevenroose) potentially replace this with native method if it gets merged:
-// https://github.com/rust-bitcoin/rust-secp256k1/pull/74
-pub fn parse_recoverable_signature(sig: &[u8]) -> Result<secp256k1::RecoverableSignature> {
+pub fn parse_recoverable_signature(
+	sig: &[u8],
+) -> std::result::Result<secp256k1::RecoverableSignature, secp256k1::Error> {
 	if sig.len() != 65 {
-		return Err(secp256k1::Error::InvalidSignature.into());
+		return Err(secp256k1::Error::InvalidSignature);
 	}
 
 	// Bitcoin Core sets the first byte to `27 + rec + (fCompressed ? 4 : 0)`.
