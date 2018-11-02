@@ -454,6 +454,11 @@ impl<'a> SignTxProgress<'a> {
 		&self.req
 	}
 
+	/// Check whether or not the signing process is finished.
+	pub fn finished(&self) -> bool {
+		self.req.get_request_type() == TxRequestType::TXFINISHED
+	}
+
 	/// Applies the updates received from the device to the PSBT and returns whether or not
 	/// the signing process is finished.
 	pub fn apply(&self, psbt: &mut psbt::PartiallySignedTransaction) -> Result<bool> {
@@ -471,18 +476,18 @@ impl<'a> SignTxProgress<'a> {
 			//TODO(stevenroose) handle serialized_tx if we need this
 		}
 
-		Ok(self.req.has_request_type() && self.req.get_request_type() == TxRequestType::TXFINISHED)
+		Ok(self.finished())
 	}
 
 	/// Manually provide a TxAck message to the device.
 	///
-	/// This method will panic if `apply()` returned true,
+	/// This method will panic if `finished()` or `apply()` returned true,
 	/// so it should always be checked in advance.
 	pub fn ack_msg(
 		self,
 		ack: protos::TxAck,
 	) -> Result<TrezorResponse<'a, SignTxProgress<'a>, protos::TxRequest>> {
-		assert!(self.req.get_request_type() != TxRequestType::TXFINISHED);
+		assert!(!self.finished());
 
 		self.client.call(
 			ack,
