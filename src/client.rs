@@ -280,6 +280,17 @@ fn ack_input_request(
 			.get(input_index)
 			.ok_or(Error::InvalidPsbt("not enough psbt inputs".to_owned()))?;
 
+		// Get the output we are spending from the PSBT input.
+		let txout = if let Some(ref txout) = psbt_input.witness_utxo {
+			txout
+		} else if let Some(ref tx) = psbt_input.non_witness_utxo {
+			tx.output
+				.get(input.previous_output.vout as usize)
+				.ok_or(Error::InvalidPsbt(format!("invalid utxo for PSBT input {}", input_index)))?
+		} else {
+			return Err(Error::InvalidPsbt(format!("no utxo for PSBT input {}", input_index)));
+		};
+
 		// If there is exactly 1 HD keypath known, we can provide it.  If more it's multisig.
 		if psbt_input.hd_keypaths.len() == 1 {
 			data_input.set_address_n(
@@ -290,19 +301,26 @@ fn ack_input_request(
 					.collect(),
 			);
 		}
-		//TODO(stevenroose) script_type
+
+		// Since we know the keypath, we probably have to sign it.  So update script_type.
+		let script_type = {
+			let script_pubkey = &txout.script_pubkey;
+
+			if script_pubkey.is_p2pkh() {
+				InputScriptType::SPENDADDRESS
+			} else if script_pubkey.is_v0_p2wpkh() || script_pubkey.is_v0_p2wsh() {
+				InputScriptType::SPENDWITNESS
+			} else if script_pubkey.is_p2sh() && psbt_input.witness_script.is_some() {
+				InputScriptType::SPENDP2SHWITNESS
+			} else {
+				//TODO(stevenroose) normal p2sh is probably multisig
+				InputScriptType::EXTERNAL
+			}
+		};
+		data_input.set_script_type(script_type);
 		//TODO(stevenroose) multisig
 
-		data_input.set_amount(if let Some(utxo) = &psbt_input.witness_utxo {
-			utxo.value
-		} else if let Some(ref tx) = psbt_input.non_witness_utxo {
-			tx.output
-				.get(input.previous_output.vout as usize)
-				.ok_or(Error::InvalidPsbt("utxo tx output length mismatch".to_owned()))?
-				.value
-		} else {
-			return Err(Error::InvalidPsbt(format!("no utxo for PSBT input {}", input_index)));
-		});
+		data_input.set_amount(txout.value);
 	}
 
 	trace!("Prepared input to ack: {:?}", data_input);
