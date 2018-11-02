@@ -458,9 +458,9 @@ fn ack_meta_request(
 /// interaction.  The information asked for by the device is provided based on a PSBT object and the
 /// resulting extra signatures are also added to the PSBT file.
 ///
-/// It's important to always first call the `apply()` method with the PSBT object to update with the
-/// data from the device and only when it returns false (not finished), call the `ack_psbt()` method
-/// to send more information to the device.
+/// It's important to always first check with the `finished()` method if more data is requested by
+/// the device.  If you're not yet finished you must call the `ack_psbt()` method to send more
+/// information to the device.
 pub struct SignTxProgress<'a> {
 	client: &'a mut Trezor,
 	req: protos::TxRequest,
@@ -477,29 +477,46 @@ impl<'a> SignTxProgress<'a> {
 		self.req.get_request_type() == TxRequestType::TXFINISHED
 	}
 
-	/// Applies the updates received from the device to the PSBT and returns whether or not
-	/// the signing process is finished.
-	pub fn apply(&self, psbt: &mut psbt::PartiallySignedTransaction) -> Result<bool> {
-		if self.req.has_serialized() {
-			let serialized = self.req.get_serialized();
-			if serialized.has_signature_index() {
-				let sig_idx = serialized.get_signature_index() as usize;
-				let sig_bytes = serialized.get_signature();
-				if sig_idx >= psbt.inputs.len() {
-					return Err(Error::TxRequestInvalidIndex(sig_idx));
-				}
-				trace!("Adding signature #{}: {}", sig_idx, hex::encode(sig_bytes));
-				psbt.inputs[sig_idx].final_script_sig = Some(sig_bytes.to_vec().into());
-			}
-			//TODO(stevenroose) handle serialized_tx if we need this
-		}
+	/// Check if a signature is provided by the device.
+	pub fn has_signature(&self) -> bool {
+		let serialized = self.req.get_serialized();
+		self.req.has_serialized() && serialized.has_signature_index() && serialized.has_signature()
+	}
 
-		Ok(self.finished())
+	/// Get the signature provided from the device along with the input index of the signature.
+	pub fn get_signature(&self) -> Option<(usize, &[u8])> {
+		if self.has_signature() {
+			let serialized = self.req.get_serialized();
+			Some((serialized.get_signature_index() as usize, serialized.get_signature()))
+		} else {
+			None
+		}
+	}
+
+	//TODO(stevenroose) We used to have a method here `apply_signature(&mut psbt)` that would put
+	// the received signature in the correct PSBT input.  However, since the signature is just a raw
+	// signature instead of a scriptSig, this is harder.  It can be done, but then we'd have to have
+	// the pubkey provided in the PSBT (possible thought HD path) and we'd have to do some Script
+	// inspection to see if we should put it as a p2pkh sciptSig or witness data.
+
+	/// Check if a part of the serialized signed tx is provided by the device.
+	pub fn has_serialized_tx_part(&self) -> bool {
+		let serialized = self.req.get_serialized();
+		self.req.has_serialized() && serialized.has_serialized_tx()
+	}
+
+	/// Get the part of the serialized signed tx from the device.
+	pub fn get_serialized_tx_part(&self) -> Option<&[u8]> {
+		if self.has_serialized_tx_part() {
+			Some(self.req.get_serialized().get_serialized_tx())
+		} else {
+			None
+		}
 	}
 
 	/// Manually provide a TxAck message to the device.
 	///
-	/// This method will panic if `finished()` or `apply()` returned true,
+	/// This method will panic if `finished()` returned true,
 	/// so it should always be checked in advance.
 	pub fn ack_msg(
 		self,
