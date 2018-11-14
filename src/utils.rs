@@ -26,25 +26,28 @@ pub fn address_from_script(script: &Script, network: Network) -> Option<address:
 			address::Payload::PubkeyHash(script.as_bytes()[3..23].into())
 		} else if script.is_p2pk() {
 			let secp = secp256k1::Secp256k1::without_caps();
-			let pubkey =
-				secp256k1::key::PublicKey::from_slice(&secp, &script.as_bytes()[1..66]).unwrap();
-			address::Payload::Pubkey(pubkey)
+			match secp256k1::key::PublicKey::from_slice(&secp, &script.as_bytes()[1..66]) {
+				Ok(pk) => address::Payload::Pubkey(pk),
+				Err(_) => return None,
+			}
 		} else if script.is_v0_p2wsh() {
-			address::Payload::WitnessProgram(
-				WitnessProgram::new(
-					u5::try_from_u8(0).expect("0<32"),
-					script.as_bytes()[2..34].to_vec(),
-					bech_network(network),
-				).unwrap(),
-			)
+			match WitnessProgram::new(
+				u5::try_from_u8(0).expect("0<32"),
+				script.as_bytes()[2..34].to_vec(),
+				bech_network(network),
+			) {
+				Ok(prog) => address::Payload::WitnessProgram(prog),
+				Err(_) => return None,
+			}
 		} else if script.is_v0_p2wpkh() {
-			address::Payload::WitnessProgram(
-				WitnessProgram::new(
-					u5::try_from_u8(0).expect("0<32"),
-					script.as_bytes()[2..22].to_vec(),
-					bech_network(network),
-				).unwrap(),
-			)
+			match WitnessProgram::new(
+				u5::try_from_u8(0).expect("0<32"),
+				script.as_bytes()[2..22].to_vec(),
+				bech_network(network),
+			) {
+				Ok(prog) => address::Payload::WitnessProgram(prog),
+				Err(_) => return None,
+			}
 		} else {
 			return None;
 		},
