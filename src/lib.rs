@@ -1,3 +1,18 @@
+
+//! # Trezor API library
+//!
+//! ## Connecting
+//!
+//! Use the public top-level methods `find_devices()` and `unique()` to find devices.  When using
+//! `find_devices()`, a list of different available devices is returned.  To connect to one or more
+//! of them, use their `connect()` method.
+//!
+//! ## Logging
+//!
+//! We use the log package interface, so any logger that supports log can be attached.
+//! Please be aware that `trace` logging can contain sensitive data.
+//!
+
 extern crate bitcoin;
 extern crate bitcoin_bech32;
 extern crate byteorder;
@@ -30,21 +45,6 @@ pub use error::{Error, Result};
 pub use messages::TrezorMessage;
 
 use std::fmt;
-
-///!
-///! # Trezor API library
-///!
-///! ## Connecting
-///!
-///! Use the public top-level methods `find_devices()` and `unique()` to find devices.  When using
-///! `find_devices()`, a list of different available devices is returned.  To connect to one or more
-///! of them, use their `connect()` method.
-///!
-///! ## Logging
-///!
-///! We use the log package interface, so any logger that supports log can be attached.
-///! Please be aware that `trace` logging can contain sensitive data.
-///!
 
 /// The different kind of Trezor device models.
 #[derive(PartialEq, Eq, Clone, Debug)]

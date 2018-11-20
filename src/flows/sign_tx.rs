@@ -1,3 +1,8 @@
+
+//!
+//! Logic to handle the sign_tx command flow.
+//!
+
 use bitcoin::network::constants::Network; //TODO(stevenroose) change after https://github.com/rust-bitcoin/rust-bitcoin/pull/181
 use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
@@ -15,8 +20,6 @@ pub use protos::InputScriptType;
 pub use protos::PinMatrixRequest_PinMatrixRequestType as PinMatrixRequestType;
 use protos::TxAck_TransactionType_TxOutputType_OutputScriptType as OutputScriptType;
 use protos::TxRequest_RequestType as TxRequestType;
-
-///! Logic to handle the sign_tx command flow.
 
 /// Fulfill a TxRequest for TXINPUT.
 fn ack_input_request(
