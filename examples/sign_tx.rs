@@ -5,8 +5,7 @@ extern crate log;
 extern crate trezor;
 
 use std::collections::HashMap;
-use std::io;
-use std::iter::FromIterator;
+use std::io::{self, Write};
 
 use bitcoin::{
 	blockdata::script::Builder, consensus::encode::Decodable, network::constants::Network,
@@ -46,16 +45,24 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> T {
 			// trim newline
 			handle_interaction(req.ack_passphrase(pass[..pass.len() - 1].to_owned()).unwrap())
 		}
+		TrezorResponse::PassphraseStateRequest(req) => {
+			handle_interaction(req.ack().unwrap())
+		}
 	}
 }
 
 fn tx_progress(
 	psbt: &mut psbt::PartiallySignedTransaction,
 	progress: SignTxProgress,
+	raw_tx: &mut Vec<u8>,
 ) -> Result<(), Error> {
-	if !progress.apply(psbt).unwrap() {
+	if let Some(part) = progress.get_serialized_tx_part() {
+		raw_tx.write(part).unwrap();
+	}
+
+	if !progress.finished() {
 		let progress = handle_interaction(progress.ack_psbt(&psbt, Network::Testnet).unwrap());
-		tx_progress(psbt, progress)
+		tx_progress(psbt, progress, raw_tx)
 	} else {
 		Ok(())
 	}
@@ -124,11 +131,9 @@ fn main() {
 		hex::encode(bitcoin::consensus::encode::serialize(&psbt.global.unsigned_tx))
 	);
 
+	let mut raw_tx = Vec::new();
 	let progress = handle_interaction(trezor.sign_tx(&psbt, Network::Testnet).unwrap());
-	tx_progress(&mut psbt, progress).unwrap();
+	tx_progress(&mut psbt, progress, &mut raw_tx).unwrap();
 
-	println!("psbt after: {:?}", psbt);
-	let signed_tx = psbt.extract_tx();
-	println!("signed txid: {}", signed_tx.bitcoin_hash());
-	println!("signed tx: {}", hex::encode(bitcoin::consensus::encode::serialize(&signed_tx)));
+	println!("signed tx: {}", hex::encode(raw_tx));
 }

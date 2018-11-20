@@ -32,15 +32,15 @@ pub mod error;
 pub mod protos;
 pub mod utils;
 
-pub mod flows {
-	mod sign_tx;
-	pub use flows::sign_tx::SignTxProgress;
+mod flows {
+	pub mod sign_tx;
 }
 
 pub use client::{
 	ButtonRequest, ButtonRequestType, EntropyRequest, Features, InputScriptType, InteractionType,
 	PassphraseRequest, PinMatrixRequest, PinMatrixRequestType, Trezor, TrezorResponse, WordCount,
 };
+pub use flows::sign_tx::SignTxProgress;
 pub use error::{Error, Result};
 pub use messages::TrezorMessage;
 

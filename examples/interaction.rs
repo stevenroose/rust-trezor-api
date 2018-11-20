@@ -27,6 +27,9 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result
 			// trim newline
 			handle_interaction(req.ack_passphrase(pass[..pass.len() - 1].to_owned())?)
 		}
+		TrezorResponse::PassphraseStateRequest(req) => {
+			handle_interaction(req.ack()?)
+		}
 	}
 }
 

@@ -10,7 +10,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use super::Model;
 use error::{Error, Result};
-use flows::SignTxProgress;
+use flows::sign_tx::SignTxProgress;
 use messages::TrezorMessage;
 use protos;
 use protos::MessageType::*;
