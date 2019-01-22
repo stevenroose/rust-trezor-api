@@ -25,8 +25,7 @@ pub fn address_from_script(script: &Script, network: Network) -> Option<address:
 		} else if script.is_p2pkh() {
 			address::Payload::PubkeyHash(script.as_bytes()[3..23].into())
 		} else if script.is_p2pk() {
-			let secp = secp256k1::Secp256k1::without_caps();
-			match secp256k1::key::PublicKey::from_slice(&secp, &script.as_bytes()[1..(script.len() - 1)]) {
+			match secp256k1::key::PublicKey::from_slice(&script.as_bytes()[1..(script.len() - 1)]) {
 				Ok(pk) => address::Payload::Pubkey(pk),
 				Err(_) => return None,
 			}
@@ -95,8 +94,7 @@ pub fn parse_recoverable_signature(
 		(sig[0] - 27) as i32
 	})?;
 
-	let secp = secp256k1::Secp256k1::without_caps();
-	Ok(secp256k1::RecoverableSignature::from_compact(&secp, &sig[1..], rec_id)?)
+	Ok(secp256k1::RecoverableSignature::from_compact(&sig[1..], rec_id)?)
 }
 
 /// Convert a bitcoin network constant to the Trezor-compatible coin_name string.

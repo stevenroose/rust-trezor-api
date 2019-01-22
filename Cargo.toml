@@ -11,10 +11,14 @@ readme = "README.md"
 
 [dependencies]
 log = "0.4.5"
-bitcoin = "0.15"
+
+#bitcoin = "0.16.0"
+# For PSBT support.
+bitcoin = { git = "https://github.com/stevenroose/rust-bitcoin.git", branch = "devel", features = [ "serde-decimal" ] }
 bitcoin-bech32 = "0.8"
+
 hid = "0.3"
-secp256k1 = "0.11"
+secp256k1 = "0.12.0"
 protobuf = "2.0"
 byteorder = "1.2"
 hex = "0.3.2"
@@ -22,8 +26,4 @@ unicode-normalization = "0.1.7"
 
 [dev-dependencies]
 fern = "0.5.6"
-
-[patch.crates-io]
-# For PSBT support.
-bitcoin = { path = "/home/steven/code/rust/bitcoin" }
 
