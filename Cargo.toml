@@ -12,17 +12,18 @@ readme = "README.md"
 [dependencies]
 log = "0.4.5"
 
-#bitcoin = "0.16.0"
-# For PSBT support.
-bitcoin = { git = "https://github.com/stevenroose/rust-bitcoin.git", branch = "devel", features = [ "serde-decimal" ] }
-bitcoin-bech32 = "0.8"
+hex = "0.3.2"
+unicode-normalization = "0.1.7"
 
-hid = "0.3"
+bitcoin = "0.18.0"
+bitcoin_hashes = "0.3"
+bitcoin-bech32 = "0.9.0"
+
 secp256k1 = "0.12.0"
 protobuf = "2.0"
 byteorder = "1.2"
-hex = "0.3.2"
-unicode-normalization = "0.1.7"
+
+hid = "0.3"
 
 [dev-dependencies]
 fern = "0.5.6"
