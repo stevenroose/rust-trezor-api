@@ -3,17 +3,14 @@ use std::time::Duration;
 
 use hid;
 
-use super::super::{AvailableDevice, Model};
+use super::super::AvailableDevice;
 use transport::error::Error;
 use transport::protocol::{Link, Protocol, ProtocolV1};
-use transport::{AvailableDeviceTransport, ProtoMessage, Transport};
+use transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
 
 mod constants {
 	///! A collection of constants related to the HID protocol.
-
-	pub const DEV_TREZOR1: (u16, u16) = (0x534C, 0x0001);
-	pub const DEV_TREZOR2: (u16, u16) = (0x1209, 0x53C1);
-	pub const DEV_TREZOR2_BL: (u16, u16) = (0x1209, 0x53C0);
+	pub use super::super::constants::*;
 
 	pub const WIRELINK_USAGE: u16 = 0xFF00;
 	pub const WIRELINK_INTERFACE: isize = 0;
@@ -23,6 +20,9 @@ mod constants {
 
 /// The chunk size for the serial protocol.
 const CHUNK_SIZE: usize = 64;
+
+/// The read timeout.
+const READ_TIMEOUT_MS: u64 = 100000;
 
 /// There are two different HID link protocol versions.
 #[derive(Debug)]
@@ -59,7 +59,7 @@ impl Drop for HidLink {
 
 impl Link for HidLink {
 	fn write_chunk(&mut self, chunk: Vec<u8>) -> Result<(), Error> {
-		assert_eq!(CHUNK_SIZE, chunk.len());
+		debug_assert_eq!(CHUNK_SIZE, chunk.len());
 		let payload = match self.hid_version {
 			HidVersion::V1 => chunk,
 			HidVersion::V2 => {
@@ -80,22 +80,12 @@ impl Link for HidLink {
 			.as_mut()
 			.unwrap()
 			.data()
-			.read(&mut chunk, Duration::from_millis(100000))?
+			.read(&mut chunk, Duration::from_millis(READ_TIMEOUT_MS))?
 		{
 			Some(64) => Ok(chunk),
 			None => Err(Error::DeviceReadTimeout),
 			Some(chunk_size) => Err(Error::UnexpectedChunkSizeFromDevice(chunk_size)),
 		}
-	}
-}
-
-/// Derive the Trezor model from the HID device.
-fn derive_model(dev: &hid::Device) -> Option<Model> {
-	match (dev.vendor_id(), dev.product_id()) {
-		constants::DEV_TREZOR1 => Some(Model::Trezor1),
-		constants::DEV_TREZOR2 => Some(Model::Trezor2),
-		constants::DEV_TREZOR2_BL => Some(Model::Trezor2Bl),
-		_ => None,
 	}
 }
 
@@ -138,24 +128,24 @@ pub struct HidTransport {
 
 impl HidTransport {
 	/// Find devices using the HID transport.
-	pub fn find_devices() -> Result<Vec<AvailableDevice>, Error> {
+	pub fn find_devices(debug: bool) -> Result<Vec<AvailableDevice>, Error> {
 		let hidman = hid::init()?;
-		let mut found = Vec::new();
+		let mut devices = Vec::new();
 		for dev in hidman.devices() {
-			let model = match derive_model(&dev) {
+			let dev_id = (dev.vendor_id(), dev.product_id());
+			let model = match derive_model(dev_id) {
 				Some(m) => m,
 				None => continue,
 			};
-			let debug = match derive_debug(&dev) {
-				Some(d) => d,
-				None => continue,
-			};
+			if derive_debug(&dev) != Some(debug) {
+				continue;
+			}
 			let serial = match dev.serial_number() {
 				Some(s) => s.clone(),
 				None => continue,
 			};
 
-			found.push(AvailableDevice {
+			devices.push(AvailableDevice {
 				model: model,
 				debug: debug,
 				transport: AvailableDeviceTransport::Hid(AvailableHidTransport {
@@ -163,7 +153,7 @@ impl HidTransport {
 				}),
 			});
 		}
-		Ok(found)
+		Ok(devices)
 	}
 
 	/// Connect to a device over the HID transport.
@@ -176,32 +166,31 @@ impl HidTransport {
 		// Traverse all actual devices again and find the matching one.
 		let hidman = hid::init()?;
 
-		let mut found = None;
-		for dev in hidman.devices() {
-			if derive_model(&dev) == Some(device.model.clone())
-				&& derive_debug(&dev) == Some(device.debug)
-				&& dev.serial_number() == Some(transport.serial_nb.clone())
-			{
-				found = Some(dev.open()?);
-				break;
-			}
-		}
+		let mut handle = hidman
+			.devices()
+			.find_map(|dev| {
+				let dev_id = (dev.vendor_id(), dev.product_id());
+				if derive_model(dev_id) == Some(device.model.clone())
+					&& derive_debug(&dev) == Some(device.debug)
+					&& dev.serial_number() == Some(transport.serial_nb.clone())
+				{
+					Some(dev.open())
+				} else {
+					None
+				}
+			})
+			.ok_or(Error::DeviceNotFound)??;
 
-		match found {
-			None => Err(Error::DeviceNotFound),
-			Some(mut handle) => {
-				let hid_version = probe_hid_version(&mut handle)?;
-				Ok(Box::new(HidTransport {
-					protocol: ProtocolV1 {
-						link: HidLink {
-							_hid_manager: hidman,
-							hid_version: hid_version,
-							handle: Some(handle),
-						},
-					},
-				}))
-			}
-		}
+		let hid_version = probe_hid_version(&mut handle)?;
+		Ok(Box::new(HidTransport {
+			protocol: ProtocolV1 {
+				link: HidLink {
+					_hid_manager: hidman,
+					hid_version: hid_version,
+					handle: Some(handle),
+				},
+			},
+		}))
 	}
 }
 

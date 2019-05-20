@@ -14,7 +14,8 @@ fn setup_logger() {
 	fern::Dispatch::new()
 		.format(|out, message, record| {
 			out.finish(format_args!("[{}][{}] {}", record.target(), record.level(), message))
-		}).level(log::LevelFilter::Trace)
+		})
+		.level(log::LevelFilter::Trace)
 		.chain(std::io::stderr())
 		.apply()
 		.unwrap();
@@ -41,30 +42,29 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> T {
 			// trim newline
 			handle_interaction(req.ack_passphrase(pass[..pass.len() - 1].to_owned()).unwrap())
 		}
-		TrezorResponse::PassphraseStateRequest(req) => {
-			handle_interaction(req.ack().unwrap())
-		}
+		TrezorResponse::PassphraseStateRequest(req) => handle_interaction(req.ack().unwrap()),
 	}
 }
 
 fn main() {
 	setup_logger();
 	// init with debugging
-	let mut trezor = trezor::unique(Some(true)).unwrap();
+	let mut trezor = trezor::unique(true).unwrap();
 	trezor.init_device().unwrap();
 
 	let pubkey = handle_interaction(
 		trezor
 			.get_public_key(
 				vec![
-					bip32::ChildNumber::from_hardened_idx(0),
-					bip32::ChildNumber::from_hardened_idx(0),
-					bip32::ChildNumber::from_hardened_idx(1),
+					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
 				],
 				trezor::protos::InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 				true,
-			).unwrap(),
+			)
+			.unwrap(),
 	);
 	let addr = Address::p2pkh(&pubkey.public_key, Network::Testnet);
 	println!("address: {}", addr);
@@ -74,13 +74,14 @@ fn main() {
 			.sign_message(
 				"regel het".to_owned(),
 				vec![
-					bip32::ChildNumber::from_hardened_idx(0),
-					bip32::ChildNumber::from_hardened_idx(0),
-					bip32::ChildNumber::from_hardened_idx(1),
+					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
 				],
 				InputScriptType::SPENDADDRESS,
 				Network::Testnet,
-			).unwrap(),
+			)
+			.unwrap(),
 	);
 	println!("Addr from device: {}", addr);
 	println!("Signature: {:?}", signature);

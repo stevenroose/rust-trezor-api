@@ -24,6 +24,7 @@ protobuf = "2.0"
 byteorder = "1.2"
 
 hid = "0.3"
+libusb = "0.3"
 
 [dev-dependencies]
 fern = "0.5.6"

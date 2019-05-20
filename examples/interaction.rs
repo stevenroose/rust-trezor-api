@@ -27,22 +27,20 @@ fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result
 			// trim newline
 			handle_interaction(req.ack_passphrase(pass[..pass.len() - 1].to_owned())?)
 		}
-		TrezorResponse::PassphraseStateRequest(req) => {
-			handle_interaction(req.ack()?)
-		}
+		TrezorResponse::PassphraseStateRequest(req) => handle_interaction(req.ack()?),
 	}
 }
 
 fn do_main() -> Result<(), trezor::Error> {
 	// init with debugging
-	let mut trezor = trezor::unique(Some(true))?;
+	let mut trezor = trezor::unique(true)?;
 	trezor.init_device()?;
 
 	let xpub = handle_interaction(trezor.get_public_key(
 		vec![
-			bip32::ChildNumber::from_hardened_idx(0),
-			bip32::ChildNumber::from_hardened_idx(0),
-			bip32::ChildNumber::from_hardened_idx(0),
+			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
+			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 		],
 		trezor::protos::InputScriptType::SPENDADDRESS,
 		Network::Testnet,

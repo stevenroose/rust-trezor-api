@@ -1,12 +1,11 @@
-
 //!
 //! Logic to handle the sign_tx command flow.
 //!
 
 use bitcoin::network::constants::Network; //TODO(stevenroose) change after https://github.com/rust-bitcoin/rust-bitcoin/pull/181
-use bitcoin::util::hash::Sha256dHash;
 use bitcoin::util::psbt;
 use bitcoin::Transaction;
+use bitcoin_hashes::sha256d;
 
 use client::*;
 use error::{Error, Result};
@@ -33,7 +32,8 @@ fn ack_input_request(
 	// Choose either the tx we are signing or a dependent tx.
 	let input_index = req.get_details().get_request_index() as usize;
 	let input = if req.get_details().has_tx_hash() {
-		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
+		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
+			.ok_or(Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for input {}:{}", req_hash, input_index);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let tx = inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?;
@@ -74,6 +74,7 @@ fn ack_input_request(
 			data_input.set_address_n(
 				(psbt_input.hd_keypaths.iter().nth(0).unwrap().1)
 					.1
+					.as_ref()
 					.iter()
 					.map(|i| i.clone().into())
 					.collect(),
@@ -125,7 +126,8 @@ fn ack_output_request(
 	if req.get_details().has_tx_hash() {
 		// Dependent tx, take the output from the PSBT and just create bin_output.
 		let output_index = req.get_details().get_request_index() as usize;
-		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
+		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
+			.ok_or(Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for output {}:{}", req_hash, output_index);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let output = if let Some(ref tx) = inp.non_witness_utxo {
@@ -166,6 +168,7 @@ fn ack_output_request(
 			data_output.set_address_n(
 				(psbt_output.hd_keypaths.iter().nth(0).unwrap().1)
 					.1
+					.as_ref()
 					.iter()
 					.map(|i| i.clone().into())
 					.collect(),
@@ -208,7 +211,8 @@ fn ack_meta_request(
 	// Choose either the tx we are signing or a dependent tx.
 	let tx: &Transaction = if req.get_details().has_tx_hash() {
 		// dependeny tx, look for it in PSBT inputs
-		let req_hash: Sha256dHash = utils::from_rev_bytes(req.get_details().get_tx_hash());
+		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
+			.ok_or(Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for tx meta of {}", req_hash);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?

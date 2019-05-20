@@ -1,4 +1,3 @@
-
 //! # Trezor API library
 //!
 //! ## Connecting
@@ -15,9 +14,11 @@
 
 extern crate bitcoin;
 extern crate bitcoin_bech32;
+extern crate bitcoin_hashes;
 extern crate byteorder;
 extern crate hex;
 extern crate hid;
+extern crate libusb;
 extern crate unicode_normalization;
 #[macro_use]
 extern crate log;
@@ -40,14 +41,14 @@ pub use client::{
 	ButtonRequest, ButtonRequestType, EntropyRequest, Features, InputScriptType, InteractionType,
 	PassphraseRequest, PinMatrixRequest, PinMatrixRequestType, Trezor, TrezorResponse, WordCount,
 };
-pub use flows::sign_tx::SignTxProgress;
 pub use error::{Error, Result};
+pub use flows::sign_tx::SignTxProgress;
 pub use messages::TrezorMessage;
 
 use std::fmt;
 
 /// The different kind of Trezor device models.
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, Copy)]
 pub enum Model {
 	Trezor1,
 	Trezor2,
@@ -88,8 +89,22 @@ impl AvailableDevice {
 }
 
 /// Search for all available devices.
-pub fn find_devices() -> Result<Vec<AvailableDevice>> {
-	transport::hid::HidTransport::find_devices().map_err(|e| Error::TransportConnect(e))
+/// Most devices will show up twice both either debugging enables or disabled.
+///
+/// Note: This will not show older devices that only support the HID interface.
+/// To use those, please use [find_hid_device].
+pub fn find_devices(debug: bool) -> Result<Vec<AvailableDevice>> {
+	let mut devices = Vec::new();
+	use transport::webusb::WebUsbTransport;
+	devices.extend(WebUsbTransport::find_devices(debug).map_err(|e| Error::TransportConnect(e))?);
+	Ok(devices)
+}
+
+/// Search for old HID devices. This should only be used for older devices that don't have the
+/// firmware updated to version 1.7.0 yet. Trying to connect to a post-1.7.0 device will fail.
+pub fn find_hid_devices() -> Result<Vec<AvailableDevice>> {
+	use transport::hid::HidTransport;
+	Ok(HidTransport::find_devices(true).map_err(|e| Error::TransportConnect(e))?)
 }
 
 /// Try to get a single device.  Optionally specify whether debug should be enabled or not.
@@ -97,11 +112,8 @@ pub fn find_devices() -> Result<Vec<AvailableDevice>> {
 /// For more fine-grained device selection, use `find_devices()`.
 /// When using USB mode, the device will show up both with debug and without debug, so it's
 /// necessary to specify the debug option in order to find a unique one.
-pub fn unique(debug: Option<bool>) -> Result<Trezor> {
-	let mut devices = find_devices()?;
-	if let Some(debug) = debug {
-		devices.retain(|d| d.debug == debug);
-	}
+pub fn unique(debug: bool) -> Result<Trezor> {
+	let mut devices = find_devices(debug)?;
 	match devices.len() {
 		0 => Err(Error::NoDeviceFound),
 		1 => Ok(devices.remove(0).connect()?),

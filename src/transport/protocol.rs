@@ -40,6 +40,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		self.link.write_chunk(chunk)?;
 		let resp = self.link.read_chunk()?;
 		if resp[0] != 0x03 {
+			println!("bad magic in v2 session_begin: {:x} instead of 0x03", resp[0]);
 			return Err(Error::DeviceBadMagic);
 		}
 		self.session_id = BigEndian::read_u32(&resp[1..5]);
@@ -54,6 +55,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		self.link.write_chunk(chunk)?;
 		let resp = self.link.read_chunk()?;
 		if resp[0] != 0x04 {
+			println!("bad magic in v2 session_end: {:x} instead of 0x04", resp[0]);
 			return Err(Error::DeviceBadMagic);
 		}
 		self.session_id = 0;
@@ -67,7 +69,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		let mut data = vec![0; 8];
 		BigEndian::write_u32(&mut data[0..4], message.message_type() as u32);
 		BigEndian::write_u32(&mut data[4..8], message.payload().len() as u32);
-		data.extend(message.take_payload());
+		data.extend(message.into_payload());
 
 		let mut cur: usize = 0;
 		let mut seq: isize = -1;
@@ -91,7 +93,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 			let end = cmp::min(cur + (REPLEN - chunk.len()), data.len());
 			chunk.extend(&data[cur..end]);
 			cur = end;
-			assert!(chunk.len() <= REPLEN);
+			debug_assert!(chunk.len() <= REPLEN);
 			chunk.resize(REPLEN, 0);
 
 			self.link.write_chunk(chunk)?;
@@ -101,10 +103,11 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 	}
 
 	fn read(&mut self) -> Result<ProtoMessage, Error> {
-		assert!(self.session_id != 0);
+		debug_assert!(self.session_id != 0);
 
 		let chunk = self.link.read_chunk()?;
 		if chunk[0] != 0x01 {
+			println!("bad magic in v2 read: {:x} instead of 0x01", chunk[0]);
 			return Err(Error::DeviceBadMagic);
 		}
 		if BigEndian::read_u32(&chunk[1..5]) != self.session_id {
@@ -120,6 +123,7 @@ impl<L: Link> Protocol for ProtocolV2<L> {
 		while data.len() < data_length {
 			let chunk = self.link.read_chunk()?;
 			if chunk[0] != 0x02 {
+				println!("bad magic in v2 session_begin: {:x} instead of 0x02", chunk[0]);
 				return Err(Error::DeviceBadMagic);
 			}
 			if BigEndian::read_u32(&chunk[1..5]) != self.session_id {
@@ -158,7 +162,7 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 		data[1] = 0x23;
 		BigEndian::write_u16(&mut data[2..4], message.message_type() as u16);
 		BigEndian::write_u32(&mut data[4..8], message.payload().len() as u32);
-		data.extend(message.take_payload());
+		data.extend(message.into_payload());
 
 		let mut cur: usize = 0;
 		while cur < data.len() {
@@ -166,7 +170,7 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 			let end = cmp::min(cur + (REPLEN - 1), data.len());
 			chunk.extend(&data[cur..end]);
 			cur = end;
-			assert!(chunk.len() <= REPLEN);
+			debug_assert!(chunk.len() <= REPLEN);
 			chunk.resize(REPLEN, 0);
 
 			self.link.write_chunk(chunk)?;
@@ -178,6 +182,10 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 	fn read(&mut self) -> Result<ProtoMessage, Error> {
 		let chunk = self.link.read_chunk()?;
 		if chunk[0] != 0x3f || chunk[1] != 0x23 || chunk[2] != 0x23 {
+			println!(
+				"bad magic in v1 read: {:x}{:x}{:x} instead of 0x3f2323",
+				chunk[0], chunk[1], chunk[2]
+			);
 			return Err(Error::DeviceBadMagic);
 		}
 		let message_type_id = BigEndian::read_u16(&chunk[3..5]) as u32;
@@ -189,6 +197,7 @@ impl<L: Link> Protocol for ProtocolV1<L> {
 		while data.len() < data_length {
 			let chunk = self.link.read_chunk()?;
 			if chunk[0] != 0x3f {
+				println!("bad magic in v1 read: {:x} instead of 0x3f", chunk[0]);
 				return Err(Error::DeviceBadMagic);
 			}
 

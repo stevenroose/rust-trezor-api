@@ -6,7 +6,7 @@ use std::result;
 
 use bitcoin;
 use bitcoin::util::base58;
-use bitcoin::util::hash::Sha256dHash;
+use bitcoin_hashes::sha256d;
 use protobuf::error::ProtobufError;
 use secp256k1;
 
@@ -48,9 +48,9 @@ pub enum Error {
 	/// The device referenced a non-existing input or output index.
 	TxRequestInvalidIndex(usize),
 	/// The device referenced an unknown TXID.
-	TxRequestUnknownTxid(Sha256dHash),
+	TxRequestUnknownTxid(sha256d::Hash),
 	/// The PSBT is missing the full tx for given input.
-	PsbtMissingInputTx(Sha256dHash),
+	PsbtMissingInputTx(sha256d::Hash),
 	/// Device produced invalid TxRequest message.
 	MalformedTxRequest(protos::TxRequest),
 	/// User provided invalid PSBT.

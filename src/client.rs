@@ -172,7 +172,7 @@ pub enum TrezorResponse<'a, T, R: TrezorMessage> {
 	ButtonRequest(ButtonRequest<'a, T, R>),
 	PinMatrixRequest(PinMatrixRequest<'a, T, R>),
 	PassphraseRequest(PassphraseRequest<'a, T, R>),
-	//TODO(stevenroose) This should be taken out of this enum and intrinsically attached to the 
+	//TODO(stevenroose) This should be taken out of this enum and intrinsically attached to the
 	// PassphraseRequest variant.  However, it's currently impossible to do this.  It might be
 	// possible to do with FnBox (currently nightly) or when Box<FnOnce> becomes possible.
 	PassphraseStateRequest(PassphraseStateRequest<'a, T, R>),
@@ -186,7 +186,9 @@ impl<'a, T, R: TrezorMessage> fmt::Display for TrezorResponse<'a, T, R> {
 			TrezorResponse::ButtonRequest(ref r) => write!(f, "ButtonRequest: {:?}", r),
 			TrezorResponse::PinMatrixRequest(ref r) => write!(f, "PinMatrixRequest: {:?}", r),
 			TrezorResponse::PassphraseRequest(ref r) => write!(f, "PassphraseRequest: {:?}", r),
-			TrezorResponse::PassphraseStateRequest(ref r) => write!(f, "PassphraseStateRequest: {:?}", r),
+			TrezorResponse::PassphraseStateRequest(ref r) => {
+				write!(f, "PassphraseStateRequest: {:?}", r)
+			}
 		}
 	}
 }
@@ -305,9 +307,9 @@ impl<'a> EntropyRequest<'a> {
 
 /// A Trezor client.
 pub struct Trezor {
-	pub model: Model,
+	model: Model,
 	// Cached features for later inspection.
-	pub features: Option<protos::Features>,
+	features: Option<protos::Features>,
 	transport: Box<Transport>,
 }
 
@@ -321,6 +323,16 @@ pub fn trezor_with_transport(model: Model, transport: Box<Transport>) -> Trezor 
 }
 
 impl Trezor {
+	/// Get the model of the Trezor device.
+	pub fn model(&self) -> Model {
+		self.model
+	}
+
+	/// Get the features of the Trezor device.
+	pub fn features(&self) -> Option<&protos::Features> {
+		self.features.as_ref()
+	}
+
 	/// Sends a message and returns the raw ProtoMessage struct that was responded by the device.
 	/// This method is only exported for users that want to expand the features of this library
 	/// f.e. for supporting additional coins etc.
@@ -342,18 +354,18 @@ impl Trezor {
 		trace!("Sending {:?} msg: {:?}", S::message_type(), message);
 		let resp = self.call_raw(message)?;
 		if resp.message_type() == R::message_type() {
-			let resp_msg = resp.take_message()?;
+			let resp_msg = resp.into_message()?;
 			trace!("Received {:?} msg: {:?}", R::message_type(), resp_msg);
 			Ok(TrezorResponse::Ok(result_handler(self, resp_msg)?))
 		} else {
 			match resp.message_type() {
 				MessageType_Failure => {
-					let fail_msg = resp.take_message()?;
+					let fail_msg = resp.into_message()?;
 					debug!("Received failure: {:?}", fail_msg);
 					Ok(TrezorResponse::Failure(fail_msg))
 				}
 				MessageType_ButtonRequest => {
-					let req_msg = resp.take_message()?;
+					let req_msg = resp.into_message()?;
 					trace!("Received ButtonRequest: {:?}", req_msg);
 					Ok(TrezorResponse::ButtonRequest(ButtonRequest {
 						message: req_msg,
@@ -362,7 +374,7 @@ impl Trezor {
 					}))
 				}
 				MessageType_PinMatrixRequest => {
-					let req_msg = resp.take_message()?;
+					let req_msg = resp.into_message()?;
 					trace!("Received PinMatrixRequest: {:?}", req_msg);
 					Ok(TrezorResponse::PinMatrixRequest(PinMatrixRequest {
 						message: req_msg,
@@ -371,7 +383,7 @@ impl Trezor {
 					}))
 				}
 				MessageType_PassphraseRequest => {
-					let req_msg = resp.take_message()?;
+					let req_msg = resp.into_message()?;
 					trace!("Received PassphraseRequest: {:?}", req_msg);
 					Ok(TrezorResponse::PassphraseRequest(PassphraseRequest {
 						message: req_msg,
@@ -380,7 +392,7 @@ impl Trezor {
 					}))
 				}
 				MessageType_PassphraseStateRequest => {
-					let req_msg = resp.take_message()?;
+					let req_msg = resp.into_message()?;
 					trace!("Received PassphraseStateRequest: {:?}", req_msg);
 					Ok(TrezorResponse::PassphraseStateRequest(PassphraseStateRequest {
 						message: req_msg,
@@ -392,7 +404,7 @@ impl Trezor {
 					debug!(
 						"Received unexpected msg type: {:?}; raw msg: {}",
 						mtype,
-						hex::encode(resp.take_payload())
+						hex::encode(resp.into_payload())
 					);
 					Err(Error::UnexpectedMessageType(mtype))
 				}
@@ -405,8 +417,6 @@ impl Trezor {
 		self.features = Some(features);
 		Ok(())
 	}
-
-	//TODO(stevenroose) macronize all the things!
 
 	pub fn initialize(&mut self) -> Result<TrezorResponse<Features, Features>> {
 		let mut req = protos::Initialize::new();
@@ -518,13 +528,13 @@ impl Trezor {
 
 	pub fn get_public_key(
 		&mut self,
-		path: Vec<bip32::ChildNumber>,
+		path: &bip32::DerivationPath,
 		script_type: InputScriptType,
 		network: Network,
 		show_display: bool,
 	) -> Result<TrezorResponse<bip32::ExtendedPubKey, protos::PublicKey>> {
 		let mut req = protos::GetPublicKey::new();
-		req.set_address_n(path.into_iter().map(Into::into).collect());
+		req.set_address_n(utils::convert_path(&path));
 		req.set_show_display(show_display);
 		req.set_coin_name(utils::coin_name(network)?);
 		req.set_script_type(script_type);
@@ -534,13 +544,13 @@ impl Trezor {
 	//TODO(stevenroose) multisig
 	pub fn get_address(
 		&mut self,
-		path: Vec<bip32::ChildNumber>,
+		path: &bip32::DerivationPath,
 		script_type: InputScriptType,
 		network: Network,
 		show_display: bool,
 	) -> Result<TrezorResponse<Address, protos::Address>> {
 		let mut req = protos::GetAddress::new();
-		req.set_address_n(path.into_iter().map(Into::into).collect());
+		req.set_address_n(utils::convert_path(&path));
 		req.set_coin_name(utils::coin_name(network)?);
 		req.set_show_display(show_display);
 		req.set_script_type(script_type);
@@ -565,13 +575,13 @@ impl Trezor {
 	pub fn sign_message(
 		&mut self,
 		message: String,
-		path: Vec<bip32::ChildNumber>,
+		path: &bip32::DerivationPath,
 		script_type: InputScriptType,
 		network: Network,
 	) -> Result<TrezorResponse<(Address, secp256k1::RecoverableSignature), protos::MessageSignature>>
 	{
 		let mut req = protos::SignMessage::new();
-		req.set_address_n(path.into_iter().map(Into::into).collect());
+		req.set_address_n(utils::convert_path(&path));
 		// Normalize to Unicode NFC.
 		let msg_bytes = message.nfc().collect::<String>().into_bytes();
 		req.set_message(msg_bytes);
