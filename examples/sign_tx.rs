@@ -7,9 +7,10 @@ extern crate trezor;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+use bitcoin::util::bip32::{self, DerivationPath};
 use bitcoin::{
 	blockdata::script::Builder, consensus::encode::Decodable, network::constants::Network,
-	util::bip32, util::hash::BitcoinHash, util::psbt, Address, OutPoint, Transaction, TxIn, TxOut,
+	util::hash::BitcoinHash, util::psbt, Address, Transaction, TxIn, TxOut,
 };
 
 use trezor::{Error, SignTxProgress, TrezorMessage, TrezorResponse};
@@ -76,11 +77,11 @@ fn main() {
 	let pubkey = handle_interaction(
 		trezor
 			.get_public_key(
-				vec![
+				&DerivationPath::from(vec![
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
-				],
+				]),
 				trezor::protos::InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 				true,
