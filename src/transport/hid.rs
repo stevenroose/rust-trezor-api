@@ -1,6 +1,6 @@
+use hid;
 use std::fmt;
 use std::time::Duration;
-use hid;
 
 use super::error::Error;
 use super::protocol::{Link, Protocol, ProtocolV1};
@@ -18,7 +18,7 @@ mod constants {
 const CHUNK_SIZE: usize = 64;
 
 /// The read timeout.
-const READ_TIMEOUT_MS: u64 = 100000;
+const READ_TIMEOUT_MS: u64 = 100_000;
 
 /// There are two different HID link protocol versions.
 #[derive(Debug)]
@@ -142,8 +142,8 @@ impl HidTransport {
 			};
 
 			devices.push(AvailableDevice {
-				model: model,
-				debug: debug,
+				model,
+				debug,
 				transport: AvailableDeviceTransport::Hid(AvailableHidTransport {
 					serial_nb: serial,
 				}),
@@ -166,7 +166,7 @@ impl HidTransport {
 			.devices()
 			.find_map(|dev| {
 				let dev_id = (dev.vendor_id(), dev.product_id());
-				if derive_model(dev_id) == Some(device.model.clone())
+				if derive_model(dev_id) == Some(device.model)
 					&& derive_debug(&dev) == Some(device.debug)
 					&& dev.serial_number() == Some(transport.serial_nb.clone())
 				{
@@ -182,7 +182,7 @@ impl HidTransport {
 			protocol: ProtocolV1 {
 				link: HidLink {
 					_hid_manager: hidman,
-					hid_version: hid_version,
+					hid_version,
 					handle: Some(handle),
 				},
 			},

@@ -71,7 +71,7 @@ impl fmt::Display for AvailableDevice {
 impl AvailableDevice {
 	/// Connect to the device.
 	pub fn connect(self) -> Result<Trezor> {
-		let transport = transport::connect(&self).map_err(|e| Error::TransportConnect(e))?;
+		let transport = transport::connect(&self).map_err(Error::TransportConnect)?;
 		Ok(client::trezor_with_transport(self.model, transport))
 	}
 }
@@ -84,7 +84,7 @@ impl AvailableDevice {
 pub fn find_devices(debug: bool) -> Result<Vec<AvailableDevice>> {
 	let mut devices = Vec::new();
 	use transport::webusb::WebUsbTransport;
-	devices.extend(WebUsbTransport::find_devices(debug).map_err(|e| Error::TransportConnect(e))?);
+	devices.extend(WebUsbTransport::find_devices(debug).map_err(Error::TransportConnect)?);
 	Ok(devices)
 }
 
@@ -92,7 +92,7 @@ pub fn find_devices(debug: bool) -> Result<Vec<AvailableDevice>> {
 /// firmware updated to version 1.7.0 yet. Trying to connect to a post-1.7.0 device will fail.
 pub fn find_hid_devices() -> Result<Vec<AvailableDevice>> {
 	use transport::hid::HidTransport;
-	Ok(HidTransport::find_devices(true).map_err(|e| Error::TransportConnect(e))?)
+	Ok(HidTransport::find_devices(true).map_err(Error::TransportConnect)?)
 }
 
 /// Try to get a single device.  Optionally specify whether debug should be enabled or not.

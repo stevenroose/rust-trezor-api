@@ -44,7 +44,7 @@ pub fn address_from_script(script: &Script, network: Network) -> Option<address:
 		} else {
 			return None;
 		},
-		network: network,
+		network,
 	})
 }
 
