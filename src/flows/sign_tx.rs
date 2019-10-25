@@ -6,11 +6,12 @@ use bitcoin::network::constants::Network; //TODO(stevenroose) change after https
 use bitcoin::util::psbt;
 use bitcoin::Transaction;
 use bitcoin_hashes::sha256d;
+use log::trace;
 
-use client::*;
-use error::{Error, Result};
-use protos;
-use utils;
+use crate::client::*;
+use crate::error::{Error, Result};
+use crate::protos;
+use crate::utils;
 
 // Some types with raw protos that we use in the public interface so they have to be exported.
 pub use protos::ButtonRequest_ButtonRequestType as ButtonRequestType;

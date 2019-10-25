@@ -48,7 +48,7 @@ impl From<libusb::Error> for Error {
 }
 
 impl error::Error for Error {
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		match *self {
 			Error::Hid(ref e) => Some(e),
 			Error::Usb(ref e) => Some(e),
@@ -83,6 +83,7 @@ impl fmt::Display for Error {
 		let desc = error::Error::description;
 		match *self {
 			Error::Hid(ref e) => fmt::Display::fmt(e, f),
+
 			Error::Usb(ref e) => fmt::Display::fmt(e, f),
 			Error::UnexpectedChunkSizeFromDevice(s) => write!(f, "{}: {}", desc(self), s),
 			Error::InvalidMessageType(ref t) => write!(f, "{}: {}", desc(self), t),

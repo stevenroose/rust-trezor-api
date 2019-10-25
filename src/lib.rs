@@ -12,19 +12,6 @@
 //! Please be aware that `trace` logging can contain sensitive data.
 //!
 
-extern crate bitcoin;
-extern crate bitcoin_bech32;
-extern crate bitcoin_hashes;
-extern crate byteorder;
-extern crate hex;
-extern crate hid;
-extern crate libusb;
-extern crate unicode_normalization;
-#[macro_use]
-extern crate log;
-extern crate protobuf;
-extern crate secp256k1;
-
 mod messages;
 mod transport;
 
@@ -33,19 +20,20 @@ pub mod error;
 pub mod protos;
 pub mod utils;
 
-mod flows {
+pub mod flows {
 	pub mod sign_tx;
 }
 
-pub use client::{
+use log::debug;
+use std::fmt;
+
+pub use crate::client::{
 	ButtonRequest, ButtonRequestType, EntropyRequest, Features, InputScriptType, InteractionType,
 	PassphraseRequest, PinMatrixRequest, PinMatrixRequestType, Trezor, TrezorResponse, WordCount,
 };
-pub use error::{Error, Result};
-pub use flows::sign_tx::SignTxProgress;
-pub use messages::TrezorMessage;
-
-use std::fmt;
+pub use crate::error::{Error, Result};
+pub use crate::flows::sign_tx::SignTxProgress;
+pub use crate::messages::TrezorMessage;
 
 /// The different kind of Trezor device models.
 #[derive(PartialEq, Eq, Clone, Debug, Copy)]

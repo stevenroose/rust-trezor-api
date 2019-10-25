@@ -2,6 +2,7 @@
 name = "trezor"
 version = "0.0.1"
 authors = ["Steven Roose <steven@stevenroose.org>"]
+edition = "2018"
 license = "CC0-1.0"
 homepage = "https://github.com/stevenroose/rust-trezor-api"
 repository = "https://github.com/stevenroose/rust-trezor-api"
@@ -10,22 +11,17 @@ keywords = [ "bitcoin", "trezor", "wallet" ]
 readme = "README.md"
 
 [dependencies]
-log = "0.4.5"
-
-hex = "0.3.2"
-unicode-normalization = "0.1.7"
-
 bitcoin = "0.18.0"
 bitcoin_hashes = "0.3"
 bitcoin-bech32 = "0.9.0"
-
-secp256k1 = "0.12.0"
-protobuf = "2.0"
 byteorder = "1.2"
-
+hex = "0.3.2"
 hid = "0.3"
 libusb = "0.3"
+log = "0.4.5"
+protobuf = "2.0"
+secp256k1 = "0.12.0"
+unicode-normalization = "0.1.7"
 
 [dev-dependencies]
 fern = "0.5.6"
-

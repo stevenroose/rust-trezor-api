@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use libusb;
 
-use super::super::AvailableDevice;
-use transport::error::Error;
-use transport::protocol::{Link, Protocol, ProtocolV1};
-use transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
+use crate::AvailableDevice;
+use crate::transport::error::Error;
+use crate::transport::protocol::{Link, Protocol, ProtocolV1};
+use crate::transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
 
 mod constants {
 	///! A collection of constants related to the WebUsb protocol.
@@ -128,7 +128,7 @@ impl WebUsbTransport {
 	}
 
 	/// Connect to a device over the WebUSB transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<dyn Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::WebUsb(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in WebUsbTransport::connect"),

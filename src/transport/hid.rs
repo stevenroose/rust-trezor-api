@@ -1,17 +1,13 @@
 use std::fmt;
 use std::time::Duration;
-
 use hid;
 
-use super::super::AvailableDevice;
-use transport::error::Error;
-use transport::protocol::{Link, Protocol, ProtocolV1};
-use transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
+use super::error::Error;
+use super::protocol::{Link, Protocol, ProtocolV1};
+use super::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
+use crate::AvailableDevice;
 
 mod constants {
-	///! A collection of constants related to the HID protocol.
-	pub use super::super::constants::*;
-
 	pub const WIRELINK_USAGE: u16 = 0xFF00;
 	pub const WIRELINK_INTERFACE: isize = 0;
 	pub const DEBUGLINK_USAGE: u16 = 0xFF01;
@@ -157,7 +153,7 @@ impl HidTransport {
 	}
 
 	/// Connect to a device over the HID transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<dyn Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::Hid(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in HidTransport::connect"),

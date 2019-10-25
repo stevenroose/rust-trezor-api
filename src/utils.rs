@@ -5,7 +5,7 @@ use bitcoin_bech32::{u5, WitnessProgram};
 use bitcoin_hashes::{hash160, sha256d, Hash};
 use secp256k1;
 
-use error::{Error, Result};
+use crate::error::{Error, Result};
 
 /// convert Network to bech32 network (this should go away soon)
 fn bech_network(network: Network) -> bitcoin_bech32::constants::Network {
