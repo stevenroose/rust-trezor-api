@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use libusb;
 
-use super::super::AvailableDevice;
-use transport::error::Error;
-use transport::protocol::{Link, Protocol, ProtocolV1};
-use transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
+use crate::transport::error::Error;
+use crate::transport::protocol::{Link, Protocol, ProtocolV1};
+use crate::transport::{derive_model, AvailableDeviceTransport, ProtoMessage, Transport};
+use crate::AvailableDevice;
 
 mod constants {
 	///! A collection of constants related to the WebUsb protocol.
@@ -26,8 +26,8 @@ mod constants {
 /// The chunk size for the serial protocol.
 const CHUNK_SIZE: usize = 64;
 
-const READ_TIMEOUT_MS: u64 = 100000;
-const WRITE_TIMEOUT_MS: u64 = 100000;
+const READ_TIMEOUT_MS: u64 = 100_000;
+const WRITE_TIMEOUT_MS: u64 = 100_000;
 
 /// An available transport for connecting with a device.
 #[derive(Debug)]
@@ -63,7 +63,7 @@ impl Link for WebUsbLink {
 		debug_assert_eq!(CHUNK_SIZE, chunk.len());
 		let timeout = Duration::from_millis(WRITE_TIMEOUT_MS);
 		if let Err(e) = self.handle.write_interrupt(self.endpoint, &chunk, timeout) {
-			return Err(e)?;
+			return Err(e.into());
 		}
 		Ok(())
 	}
@@ -116,8 +116,8 @@ impl WebUsbTransport {
 			}
 
 			devices.push(AvailableDevice {
-				model: model,
-				debug: debug,
+				model,
+				debug,
 				transport: AvailableDeviceTransport::WebUsb(AvailableWebUsbTransport {
 					bus: dev.bus_number(),
 					address: dev.address(),
@@ -128,15 +128,16 @@ impl WebUsbTransport {
 	}
 
 	/// Connect to a device over the WebUSB transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<dyn Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::WebUsb(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in WebUsbTransport::connect"),
 		};
 
-		let interface = match device.debug {
-			false => constants::INTERFACE,
-			true => constants::INTERFACE_DEBUG,
+		let interface = if device.debug {
+			constants::INTERFACE_DEBUG
+		} else {
+			constants::INTERFACE
 		};
 
 		// To circumvent a limitation from the libusb crate, we need to do some unsafe stuff to be
@@ -172,9 +173,10 @@ impl WebUsbTransport {
 				link: WebUsbLink {
 					libusb_context: context_ref,
 					handle: handle_ref,
-					endpoint: match device.debug {
-						false => constants::ENDPOINT,
-						true => constants::ENDPOINT_DEBUG,
+					endpoint: if device.debug {
+						constants::ENDPOINT_DEBUG
+					} else {
+						constants::ENDPOINT
 					},
 				},
 			},

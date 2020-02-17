@@ -1,13 +1,13 @@
-use fmt;
-use protobuf;
-
-use super::{AvailableDevice, Model};
-use protos::MessageType;
-
 pub mod error;
 pub mod hid;
 pub mod protocol;
 pub mod webusb;
+
+use protobuf;
+use std::fmt;
+
+use super::protos::MessageType;
+use super::{AvailableDevice, Model};
 
 /// An available transport for a Trezor device, containing any of the different supported
 /// transports.
@@ -62,7 +62,7 @@ pub trait Transport {
 
 /// A delegation method to connect an available device transport.  It delegates to the different
 /// transport types.
-pub fn connect(available_device: &AvailableDevice) -> Result<Box<Transport>, error::Error> {
+pub fn connect(available_device: &AvailableDevice) -> Result<Box<dyn Transport>, error::Error> {
 	match available_device.transport {
 		AvailableDeviceTransport::Hid(_) => hid::HidTransport::connect(&available_device),
 		AvailableDeviceTransport::WebUsb(_) => webusb::WebUsbTransport::connect(&available_device),

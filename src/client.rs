@@ -5,17 +5,18 @@ use bitcoin::util::bip32;
 use bitcoin::util::psbt;
 use bitcoin::Address;
 use hex;
+use log::{debug, trace};
 use secp256k1;
 use unicode_normalization::UnicodeNormalization;
 
-use super::Model;
-use error::{Error, Result};
-use flows::sign_tx::SignTxProgress;
-use messages::TrezorMessage;
-use protos;
-use protos::MessageType::*;
-use transport::{ProtoMessage, Transport};
-use utils;
+use crate::error::{Error, Result};
+use crate::flows::sign_tx::SignTxProgress;
+use crate::messages::TrezorMessage;
+use crate::protos;
+use crate::protos::MessageType::*;
+use crate::transport::{ProtoMessage, Transport};
+use crate::utils;
+use crate::Model;
 
 // Some types with raw protos that we use in the public interface so they have to be exported.
 use protos::ApplySettings_PassphraseSourceType as PassphraseSource;
@@ -43,7 +44,7 @@ pub enum InteractionType {
 //TODO(stevenroose) should this be FnOnce and put in an FnBox?
 /// Function to be passed to the `Trezor.call` method to process the Trezor response message into a
 /// general-purpose type.
-pub type ResultHandler<'a, T, R> = Fn(&'a mut Trezor, R) -> Result<T>;
+pub type ResultHandler<'a, T, R> = dyn Fn(&'a mut Trezor, R) -> Result<T>;
 
 /// A button request message sent by the device.
 pub struct ButtonRequest<'a, T, R: TrezorMessage> {
@@ -305,19 +306,52 @@ impl<'a> EntropyRequest<'a> {
 	}
 }
 
+/// Parameters of `Trezor::reset_device`.
+pub struct ResetParams {
+	display_random: bool,
+	strength: usize,
+	passphrase_protection: bool,
+	pin_protection: bool,
+	label: String,
+	skip_backup: bool,
+	no_backup: bool,
+}
+
+impl ResetParams {
+	pub fn new(
+		display_random: bool,
+		strength: usize,
+		passphrase_protection: bool,
+		pin_protection: bool,
+		label: String,
+		skip_backup: bool,
+		no_backup: bool,
+	) -> Self {
+		ResetParams {
+			display_random,
+			strength,
+			passphrase_protection,
+			pin_protection,
+			label,
+			skip_backup,
+			no_backup,
+		}
+	}
+}
+
 /// A Trezor client.
 pub struct Trezor {
 	model: Model,
 	// Cached features for later inspection.
 	features: Option<protos::Features>,
-	transport: Box<Transport>,
+	transport: Box<dyn Transport>,
 }
 
 /// Create a new Trezor instance with the given transport.
-pub fn trezor_with_transport(model: Model, transport: Box<Transport>) -> Trezor {
+pub fn trezor_with_transport(model: Model, transport: Box<dyn Transport>) -> Trezor {
 	Trezor {
-		model: model,
-		transport: transport,
+		model,
+		transport,
 		features: None,
 	}
 }
@@ -338,8 +372,8 @@ impl Trezor {
 	/// f.e. for supporting additional coins etc.
 	pub fn call_raw<S: TrezorMessage>(&mut self, message: S) -> Result<ProtoMessage> {
 		let proto_msg = ProtoMessage(S::message_type(), message.write_to_bytes()?);
-		self.transport.write_message(proto_msg).map_err(|e| Error::TransportSendMessage(e))?;
-		self.transport.read_message().map_err(|e| Error::TransportReceiveMessage(e))
+		self.transport.write_message(proto_msg).map_err(Error::TransportSendMessage)?;
+		self.transport.read_message().map_err(Error::TransportReceiveMessage)
 	}
 
 	/// Sends a message and returns a TrezorResponse with either the expected response message,
@@ -370,7 +404,7 @@ impl Trezor {
 					Ok(TrezorResponse::ButtonRequest(ButtonRequest {
 						message: req_msg,
 						client: self,
-						result_handler: result_handler,
+						result_handler,
 					}))
 				}
 				MessageType_PinMatrixRequest => {
@@ -379,7 +413,7 @@ impl Trezor {
 					Ok(TrezorResponse::PinMatrixRequest(PinMatrixRequest {
 						message: req_msg,
 						client: self,
-						result_handler: result_handler,
+						result_handler,
 					}))
 				}
 				MessageType_PassphraseRequest => {
@@ -388,7 +422,7 @@ impl Trezor {
 					Ok(TrezorResponse::PassphraseRequest(PassphraseRequest {
 						message: req_msg,
 						client: self,
-						result_handler: result_handler,
+						result_handler,
 					}))
 				}
 				MessageType_PassphraseStateRequest => {
@@ -397,7 +431,7 @@ impl Trezor {
 					Ok(TrezorResponse::PassphraseStateRequest(PassphraseStateRequest {
 						message: req_msg,
 						client: self,
-						result_handler: result_handler,
+						result_handler,
 					}))
 				}
 				mtype => {
@@ -466,22 +500,16 @@ impl Trezor {
 
 	pub fn reset_device(
 		&mut self,
-		display_random: bool,
-		strength: usize,
-		passphrase_protection: bool,
-		pin_protection: bool,
-		label: String,
-		skip_backup: bool,
-		no_backup: bool,
+		reset_params: ResetParams,
 	) -> Result<TrezorResponse<EntropyRequest, protos::EntropyRequest>> {
 		let mut req = protos::ResetDevice::new();
-		req.set_display_random(display_random);
-		req.set_strength(strength as u32);
-		req.set_passphrase_protection(passphrase_protection);
-		req.set_pin_protection(pin_protection);
-		req.set_label(label);
-		req.set_skip_backup(skip_backup);
-		req.set_no_backup(no_backup);
+		req.set_display_random(reset_params.display_random);
+		req.set_strength(reset_params.strength as u32);
+		req.set_passphrase_protection(reset_params.passphrase_protection);
+		req.set_pin_protection(reset_params.pin_protection);
+		req.set_label(reset_params.label);
+		req.set_skip_backup(reset_params.skip_backup);
+		req.set_no_backup(reset_params.no_backup);
 		self.call(
 			req,
 			Box::new(|c, _| {

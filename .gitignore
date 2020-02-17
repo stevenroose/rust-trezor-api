@@ -1,0 +1,19 @@
+# Rust build directory
+target/
+
+# Emacs backups
+\#*#
+.#*
+*~
+
+# Vim backups
+.*.sw[po]
+
+# Patch files
+*.orig
+*.rej
+*.diff
+*.patch
+
+# Mac OS specific
+.DS_Store

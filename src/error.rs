@@ -10,9 +10,9 @@ use bitcoin_hashes::sha256d;
 use protobuf::error::ProtobufError;
 use secp256k1;
 
-use client::InteractionType;
-use protos;
-use transport;
+use crate::client::InteractionType;
+use crate::protos;
+use crate::transport;
 
 /// Trezor error.
 #[derive(Debug)]
@@ -86,7 +86,7 @@ impl From<secp256k1::Error> for Error {
 }
 
 impl error::Error for Error {
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		match *self {
 			Error::TransportConnect(ref e) => Some(e),
 			Error::TransportBeginSession(ref e) => Some(e),

@@ -6,8 +6,8 @@ extern crate trezor;
 
 use std::io;
 
-use bitcoin::{network::constants::Network, util::bip32, Address};
-
+use bitcoin::util::bip32::{self, DerivationPath};
+use bitcoin::{network::constants::Network, Address};
 use trezor::{InputScriptType, TrezorMessage, TrezorResponse};
 
 fn setup_logger() {
@@ -55,11 +55,11 @@ fn main() {
 	let pubkey = handle_interaction(
 		trezor
 			.get_public_key(
-				vec![
+				&DerivationPath::from(vec![
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
-				],
+				]),
 				trezor::protos::InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 				true,
@@ -73,11 +73,11 @@ fn main() {
 		trezor
 			.sign_message(
 				"regel het".to_owned(),
-				vec![
+				&DerivationPath::from(vec![
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
-				],
+				]),
 				InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 			)

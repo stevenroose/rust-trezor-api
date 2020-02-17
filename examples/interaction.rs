@@ -3,7 +3,8 @@ extern crate trezor;
 
 use std::io;
 
-use bitcoin::{network::constants::Network, util::bip32, Address};
+use bitcoin::util::bip32::{self, DerivationPath};
+use bitcoin::{network::constants::Network, Address};
 use trezor::{Error, TrezorMessage, TrezorResponse};
 
 fn handle_interaction<T, R: TrezorMessage>(resp: TrezorResponse<T, R>) -> Result<T, Error> {
@@ -37,11 +38,11 @@ fn do_main() -> Result<(), trezor::Error> {
 	trezor.init_device()?;
 
 	let xpub = handle_interaction(trezor.get_public_key(
-		vec![
+		&DerivationPath::from(vec![
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
-		],
+		]),
 		trezor::protos::InputScriptType::SPENDADDRESS,
 		Network::Testnet,
 		true,

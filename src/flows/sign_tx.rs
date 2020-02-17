@@ -6,11 +6,12 @@ use bitcoin::network::constants::Network; //TODO(stevenroose) change after https
 use bitcoin::util::psbt;
 use bitcoin::Transaction;
 use bitcoin_hashes::sha256d;
+use log::trace;
 
-use client::*;
-use error::{Error, Result};
-use protos;
-use utils;
+use crate::client::*;
+use crate::error::{Error, Result};
+use crate::protos;
+use crate::utils;
 
 // Some types with raw protos that we use in the public interface so they have to be exported.
 pub use protos::ButtonRequest_ButtonRequestType as ButtonRequestType;
@@ -33,7 +34,7 @@ fn ack_input_request(
 	let input_index = req.get_details().get_request_index() as usize;
 	let input = if req.get_details().has_tx_hash() {
 		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
-			.ok_or(Error::MalformedTxRequest(req.clone()))?;
+			.ok_or_else(|| Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for input {}:{}", req_hash, input_index);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let tx = inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?;
@@ -56,15 +57,15 @@ fn ack_input_request(
 		let psbt_input = psbt
 			.inputs
 			.get(input_index)
-			.ok_or(Error::InvalidPsbt("not enough psbt inputs".to_owned()))?;
+			.ok_or_else(|| Error::InvalidPsbt("not enough psbt inputs".to_owned()))?;
 
 		// Get the output we are spending from the PSBT input.
 		let txout = if let Some(ref txout) = psbt_input.witness_utxo {
 			txout
 		} else if let Some(ref tx) = psbt_input.non_witness_utxo {
-			tx.output
-				.get(input.previous_output.vout as usize)
-				.ok_or(Error::InvalidPsbt(format!("invalid utxo for PSBT input {}", input_index)))?
+			tx.output.get(input.previous_output.vout as usize).ok_or_else(|| {
+				Error::InvalidPsbt(format!("invalid utxo for PSBT input {}", input_index))
+			})?
 		} else {
 			return Err(Error::InvalidPsbt(format!("no utxo for PSBT input {}", input_index)));
 		};
@@ -127,7 +128,7 @@ fn ack_output_request(
 		// Dependent tx, take the output from the PSBT and just create bin_output.
 		let output_index = req.get_details().get_request_index() as usize;
 		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
-			.ok_or(Error::MalformedTxRequest(req.clone()))?;
+			.ok_or_else(|| Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for output {}:{}", req_hash, output_index);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		let output = if let Some(ref tx) = inp.non_witness_utxo {
@@ -163,7 +164,7 @@ fn ack_output_request(
 		let psbt_output = psbt
 			.outputs
 			.get(output_index)
-			.ok_or(Error::InvalidPsbt("output indices don't match".to_owned()))?;
+			.ok_or_else(|| Error::InvalidPsbt("output indices don't match".to_owned()))?;
 		if psbt_output.hd_keypaths.len() == 1 {
 			data_output.set_address_n(
 				(psbt_output.hd_keypaths.iter().nth(0).unwrap().1)
@@ -212,7 +213,7 @@ fn ack_meta_request(
 	let tx: &Transaction = if req.get_details().has_tx_hash() {
 		// dependeny tx, look for it in PSBT inputs
 		let req_hash: sha256d::Hash = utils::from_rev_bytes(req.get_details().get_tx_hash())
-			.ok_or(Error::MalformedTxRequest(req.clone()))?;
+			.ok_or_else(|| Error::MalformedTxRequest(req.clone()))?;
 		trace!("Preparing ack for tx meta of {}", req_hash);
 		let inp = utils::psbt_find_input(&psbt, req_hash)?;
 		inp.non_witness_utxo.as_ref().ok_or(Error::PsbtMissingInputTx(req_hash))?
@@ -252,8 +253,8 @@ impl<'a> SignTxProgress<'a> {
 	/// Only intended for internal usage.
 	pub fn new(client: &mut Trezor, req: protos::TxRequest) -> SignTxProgress {
 		SignTxProgress {
-			client: client,
-			req: req,
+			client,
+			req,
 		}
 	}
 

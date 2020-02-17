@@ -1,7 +1,7 @@
 use protobuf;
 
-use protos::MessageType::*;
-use protos::*;
+use crate::protos::MessageType::*;
+use crate::protos::*;
 
 ///! In this module we implement the message_type() getter for all protobuf message types.
 
