@@ -28,4 +28,3 @@ libusb = "0.3"
 
 [dev-dependencies]
 fern = "0.5.6"
-
