@@ -86,7 +86,7 @@ impl From<secp256k1::Error> for Error {
 }
 
 impl error::Error for Error {
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		match *self {
 			Error::TransportConnect(ref e) => Some(e),
 			Error::TransportBeginSession(ref e) => Some(e),
@@ -97,43 +97,15 @@ impl error::Error for Error {
 			_ => None,
 		}
 	}
-
-	fn description(&self) -> &str {
-		match *self {
-			Error::NoDeviceFound => "Trezor device not found",
-			Error::DeviceNotUnique => "multiple Trezor devices found",
-			Error::TransportConnect(_) => "transport error connecting to device",
-			Error::TransportBeginSession(_) => "transport error while beginning a session",
-			Error::TransportEndSession(_) => "transport error while ending a session",
-			Error::TransportSendMessage(_) => "transport error while sending a message",
-			Error::TransportReceiveMessage(_) => "transport error while receiving a message",
-			Error::UnexpectedMessageType(_) => {
-				"received an unexpected message type from the device"
-			}
-			Error::Protobuf(_) => "error reading or writing protobuf messages",
-			Error::FailureResponse(_) => "a failure message was returned by the device",
-			Error::UnexpectedInteractionRequest(_) => {
-				"an unexpected interaction request was returned by the device"
-			}
-			Error::Base58(ref e) => error::Error::description(e),
-			Error::UnsupportedNetwork => "given network is not supported",
-			Error::InvalidEntropy => "provided entropy is not 32 bytes",
-			Error::TxRequestInvalidIndex(_) => {
-				"the device referenced a non-existing input or output index"
-			}
-			Error::TxRequestUnknownTxid(_) => "the device referenced an unknown TXID",
-			Error::PsbtMissingInputTx(_) => "the PSBT is missing the full tx for given input",
-			Error::MalformedTxRequest(_) => "device produced invalid TxRequest message",
-			Error::InvalidPsbt(_) => "user provided invalid PSBT",
-			Error::BitcoinEncode(_) => "error encoding/decoding a Bitcoin data structure",
-			Error::Secp256k1(_) => "elliptic curve crypto error",
-		}
-	}
 }
 
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
+			Error::NoDeviceFound => write!(f, "Trezor device not found"),
+			Error::DeviceNotUnique => write!(f, "multiple Trezor devices found"),
+			Error::UnsupportedNetwork => write!(f, "given network is not supported"),
+			Error::InvalidEntropy => write!(f, "provided entropy is not 32 bytes"),
 			Error::TransportConnect(ref e) => write!(f, "transport connect: {}", e),
 			Error::TransportBeginSession(ref e) => write!(f, "transport beginning session: {}", e),
 			Error::TransportEndSession(ref e) => write!(f, "transport ending session: {}", e),
@@ -166,7 +138,6 @@ impl fmt::Display for Error {
 			Error::InvalidPsbt(ref m) => write!(f, "invalid PSBT: {}", m),
 			Error::BitcoinEncode(ref e) => write!(f, "bitcoin encoding error: {}", e),
 			Error::Secp256k1(ref e) => write!(f, "ECDSA signature error: {}", e),
-			_ => f.write_str(error::Error::description(self)),
 		}
 	}
 }

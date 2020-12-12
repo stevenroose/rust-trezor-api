@@ -48,45 +48,38 @@ impl From<libusb::Error> for Error {
 }
 
 impl error::Error for Error {
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		match *self {
 			Error::Hid(ref e) => Some(e),
 			Error::Usb(ref e) => Some(e),
 			_ => None,
 		}
 	}
-
-	fn description(&self) -> &str {
-		match *self {
-			Error::Hid(ref e) => error::Error::description(e),
-			Error::Usb(ref e) => error::Error::description(e),
-			Error::DeviceNotFound => "the device to connect to was not found",
-			Error::DeviceDisconnected => "the device is no longer available",
-			Error::UnknownHidVersion => "HID version of the device unknown",
-			Error::UnexpectedChunkSizeFromDevice(_) => {
-				"the device produced a data chunk of unexpected size"
-			}
-			Error::DeviceReadTimeout => "timeout expired while reading from device",
-			Error::DeviceBadMagic => "the device sent chunk with wrong magic value",
-			Error::DeviceBadSessionId => "the device sent a message with a wrong session id",
-			Error::DeviceUnexpectedSequenceNumber => {
-				"the device sent an unexpected sequence number"
-			}
-			Error::InvalidMessageType(_) => "received a non-existing message type from the device",
-			Error::NoDeviceSerial => "unable to determine device serial number",
-		}
-	}
 }
 
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		let desc = error::Error::description;
 		match *self {
 			Error::Hid(ref e) => fmt::Display::fmt(e, f),
 			Error::Usb(ref e) => fmt::Display::fmt(e, f),
-			Error::UnexpectedChunkSizeFromDevice(s) => write!(f, "{}: {}", desc(self), s),
-			Error::InvalidMessageType(ref t) => write!(f, "{}: {}", desc(self), t),
-			_ => f.write_str(desc(self)),
+			Error::DeviceNotFound => write!(f, "the device to connect to was not found"),
+			Error::DeviceDisconnected => write!(f, "the device is no longer available"),
+			Error::UnknownHidVersion => write!(f, "HID version of the device unknown"),
+			Error::UnexpectedChunkSizeFromDevice(_) => {
+				write!(f, "the device produced a data chunk of unexpected size")
+			}
+			Error::DeviceReadTimeout => write!(f, "timeout expired while reading from device"),
+			Error::DeviceBadMagic => write!(f, "the device sent chunk with wrong magic value"),
+			Error::DeviceBadSessionId => {
+				write!(f, "the device sent a message with a wrong session id")
+			}
+			Error::DeviceUnexpectedSequenceNumber => {
+				write!(f, "the device sent an unexpected sequence number")
+			}
+			Error::InvalidMessageType(_) => {
+				write!(f, "received a non-existing message type from the device")
+			}
+			Error::NoDeviceSerial => write!(f, "unable to determine device serial number"),
 		}
 	}
 }

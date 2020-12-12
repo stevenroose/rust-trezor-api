@@ -128,7 +128,7 @@ impl WebUsbTransport {
 	}
 
 	/// Connect to a device over the WebUSB transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<dyn Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::WebUsb(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in WebUsbTransport::connect"),

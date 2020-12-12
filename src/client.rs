@@ -43,7 +43,7 @@ pub enum InteractionType {
 //TODO(stevenroose) should this be FnOnce and put in an FnBox?
 /// Function to be passed to the `Trezor.call` method to process the Trezor response message into a
 /// general-purpose type.
-pub type ResultHandler<'a, T, R> = Fn(&'a mut Trezor, R) -> Result<T>;
+pub type ResultHandler<'a, T, R> = dyn Fn(&'a mut Trezor, R) -> Result<T>;
 
 /// A button request message sent by the device.
 pub struct ButtonRequest<'a, T, R: TrezorMessage> {
@@ -310,11 +310,11 @@ pub struct Trezor {
 	model: Model,
 	// Cached features for later inspection.
 	features: Option<protos::Features>,
-	transport: Box<Transport>,
+	transport: Box<dyn Transport>,
 }
 
 /// Create a new Trezor instance with the given transport.
-pub fn trezor_with_transport(model: Model, transport: Box<Transport>) -> Trezor {
+pub fn trezor_with_transport(model: Model, transport: Box<dyn Transport>) -> Trezor {
 	Trezor {
 		model: model,
 		transport: transport,
