@@ -157,7 +157,7 @@ impl HidTransport {
 	}
 
 	/// Connect to a device over the HID transport.
-	pub fn connect(device: &AvailableDevice) -> Result<Box<Transport>, Error> {
+	pub fn connect(device: &AvailableDevice) -> Result<Box<dyn Transport>, Error> {
 		let transport = match device.transport {
 			AvailableDeviceTransport::Hid(ref t) => t,
 			_ => panic!("passed wrong AvailableDevice in HidTransport::connect"),
