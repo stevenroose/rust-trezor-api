@@ -37,11 +37,11 @@ fn do_main() -> Result<(), trezor::Error> {
 	trezor.init_device()?;
 
 	let xpub = handle_interaction(trezor.get_public_key(
-		vec![
+		&vec![
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 			bip32::ChildNumber::from_hardened_idx(0).unwrap(),
-		],
+		].into(),
 		trezor::protos::InputScriptType::SPENDADDRESS,
 		Network::Testnet,
 		true,

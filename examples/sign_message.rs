@@ -55,11 +55,11 @@ fn main() {
 	let pubkey = handle_interaction(
 		trezor
 			.get_public_key(
-				vec![
+				&vec![
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
-				],
+				].into(),
 				trezor::protos::InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 				true,
@@ -73,11 +73,11 @@ fn main() {
 		trezor
 			.sign_message(
 				"regel het".to_owned(),
-				vec![
+				&vec![
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(0).unwrap(),
 					bip32::ChildNumber::from_hardened_idx(1).unwrap(),
-				],
+				].into(),
 				InputScriptType::SPENDADDRESS,
 				Network::Testnet,
 			)
